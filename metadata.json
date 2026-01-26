@@ -1,0 +1,7 @@
+{
+  "name": "Sentinel - Real-Time Event Intelligence",
+  "description": "A sophisticated command-and-control platform for global event ingestion, immutable analysis, and AI-driven situational awareness.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
