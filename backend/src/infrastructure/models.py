@@ -3,6 +3,11 @@ import uuid
 from domain.entities import EventSeverity, EventStatus
 
 class EventModel(models.Model):
+    """
+    Core event model with geospatial data.
+    Uses simple lat/lon float fields with pure Python geospatial calculations.
+    Can migrate to PostGIS PointField when GDAL is properly configured.
+    """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     title = models.CharField(max_length=255, blank=True)
     description = models.TextField()
@@ -17,10 +22,11 @@ class EventModel(models.Model):
         choices=[(tag.value, tag.name) for tag in EventStatus],
         default=EventStatus.PENDING.value
     )
-    # Location data
-    latitude = models.FloatField(null=True, blank=True)
-    longitude = models.FloatField(null=True, blank=True)
-    accuracy = models.FloatField(default=0.0)
+    
+    # Location data (simple floats for GDAL-free environment)
+    latitude = models.FloatField(null=True, blank=True, db_index=True)
+    longitude = models.FloatField(null=True, blank=True, db_index=True)
+    accuracy = models.FloatField(default=0.0)  # in meters
     altitude = models.FloatField(null=True, blank=True)
     
     trust_score = models.FloatField(default=0.0)
@@ -30,6 +36,9 @@ class EventModel(models.Model):
     class Meta:
         db_table = 'events'
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['latitude', 'longitude'], name='events_coords_idx'),
+        ]
 
     def __str__(self):
         return f"{self.title or 'Untitled'} ({self.status})"
@@ -48,3 +57,21 @@ class MediaModel(models.Model):
 
     def __str__(self):
         return f"Media {self.id} for {self.event.id}"
+
+
+
+class AuditLog(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    action = models.CharField(max_length=50)  # e.g., 'LOGIN', 'CREATE_EVENT'
+    source = models.CharField(max_length=50)  # e.g., 'Username', 'System'
+    status = models.CharField(max_length=20)  # e.g., 'SUCCESS', 'FAILURE'
+    details = models.TextField(blank=True, null=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'audit_logs'
+        ordering = ['-timestamp']
+
+    def __str__(self):
+        return f"{self.action} - {self.source} ({self.status})"

@@ -19,6 +19,15 @@ export interface Coordinates {
   lng: number;
 }
 
+export interface MediaAttachment {
+  id: string;
+  file: string;        // URL to the file
+  file_type: 'image' | 'video' | 'audio';
+  file_hash: string;
+  metadata: Record<string, any>;
+  created_at: string;
+}
+
 export interface IntelligenceEvent {
   id: string;
   timestamp: string;
@@ -27,11 +36,12 @@ export interface IntelligenceEvent {
   title: string;
   description: string;
   location: string;
-  region: string; // Added to match GeoJSON properties
+  region: string;
   coords: Coordinates;
   source: string;
   verified: boolean;
   metadata: Record<string, any>;
+  media_attachments?: MediaAttachment[];
 }
 
 export interface AgentResponse {
@@ -39,3 +49,4 @@ export interface AgentResponse {
   content: string;
   timestamp: string;
 }
+

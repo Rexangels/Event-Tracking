@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { IntelligenceEvent } from '../types';
 import { fetchEvents } from '../services/eventService';
+import { useRealtimeEvents } from '../hooks/useRealtimeEvents'; // Import hook
 import EventFeed from '../components/EventFeed';
 import MapVisualizer from '../components/MapVisualizer';
 import AIAgentPanel from '../components/AIAgentPanel';
@@ -8,11 +9,32 @@ import StatSummary from '../components/StatSummary';
 import RegionIntelligencePanel from '../components/RegionIntelligencePanel';
 import AnalystModule from '../components/AnalystModule';
 import GovernanceModule from '../components/GovernanceModule';
+import EventDetailPanel from '../components/EventDetailPanel';
 
 const AdminDashboard: React.FC = () => {
     const [events, setEvents] = useState<IntelligenceEvent[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [selectedEventId, setSelectedEventId] = useState<string | undefined>(undefined);
+    const [connectionStatus, setConnectionStatus] = useState<string>('DISCONNECTED');
+
+    // Real-time Event Hook
+    const { isConnected } = useRealtimeEvents({
+        onEventCreated: (newEvent) => {
+            setEvents(prev => [newEvent, ...prev]);
+            // Optional: Show notification toast
+            console.log('New Event Received:', newEvent.title);
+        },
+        onEventUpdated: (updatedEvent) => {
+            setEvents(prev => prev.map(e => e.id === updatedEvent.id ? updatedEvent : e));
+        },
+        onEventVerified: (eventId, verified) => {
+            setEvents(prev => prev.map(e => e.id === eventId ? { ...e, verified } : e));
+        }
+    });
+
+    useEffect(() => {
+        setConnectionStatus(isConnected ? 'CONNECTED' : 'RECONNECTING...');
+    }, [isConnected]);
 
     useEffect(() => {
         const loadEvents = async () => {
@@ -204,6 +226,12 @@ const AdminDashboard: React.FC = () => {
                 </main>
             )}
 
+            {/* Event Detail Panel - Slide-in from right */}
+            <EventDetailPanel
+                event={selectedEvent}
+                onClose={() => setSelectedEventId(undefined)}
+            />
+
             {/* Connection Bar (Bottom) */}
             <footer className="h-6 bg-blue-600 flex items-center px-4 justify-between shrink-0 relative z-50">
                 <div className="flex gap-4 items-center">
@@ -212,7 +240,7 @@ const AdminDashboard: React.FC = () => {
                 </div>
                 <div className="flex gap-4 items-center">
                     <span className="text-[9px] font-bold tracking-widest text-white uppercase">
-                        Live_Feed: {events.length} Active Vectors // Integrity: Optimal
+                        Live_Feed: {events.length} Active Vectors // Status: {connectionStatus}
                     </span>
                     <span className="text-[9px] font-bold tracking-widest uppercase text-white">{new Date().toLocaleDateString()} // GMT {new Date().getHours()}:00</span>
                 </div>

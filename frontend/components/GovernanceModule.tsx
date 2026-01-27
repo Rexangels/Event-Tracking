@@ -1,15 +1,33 @@
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Badge } from './ui/Badge';
+import { governanceService, AuditLog } from '../services/governanceService';
 
 const GovernanceModule: React.FC = () => {
-  const AUDIT_LOGS = [
-    { id: 'LOG-8821', action: 'DATA_INGESTION', source: 'SeismicNet API', status: 'VERIFIED', time: '14:22:01' },
-    { id: 'LOG-8822', action: 'AGENT_ACCESS', source: 'SEC-USR-4921', status: 'AUTHORIZED', time: '14:15:33' },
-    { id: 'LOG-8823', action: 'POLICY_ENFORCEMENT', source: 'GDPR_RESTRICTION_V2', status: 'ACTIVE', time: '13:55:10' },
-    { id: 'LOG-8824', action: 'SYSTEM_UPGRADE', source: 'CORE_KERNEL', status: 'SUCCESS', time: '12:00:00' },
-    { id: 'LOG-8825', action: 'THREAT_MODEL_RECAL', source: 'SENTINEL_AI', status: 'STABLE', time: '11:45:12' },
-  ];
+  const [logs, setLogs] = useState<AuditLog[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchLogs = async () => {
+      try {
+        const data = await governanceService.getAuditLogs();
+        setLogs(data);
+      } catch (error) {
+        console.error("Failed to fetch audit logs:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchLogs();
+  }, []);
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleTimeString();
+  };
+
+  if (loading) {
+    return <div className="text-slate-500 p-4">Loading system ledger...</div>;
+  }
 
   return (
     <div className="flex flex-col h-full gap-6 animate-in fade-in slide-in-from-right-4 duration-500">
@@ -87,9 +105,9 @@ const GovernanceModule: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/50">
-                  {AUDIT_LOGS.map((log) => (
+                  {logs.map((log) => (
                     <tr key={log.id} className="hover:bg-slate-800/30 transition-colors">
-                      <td className="px-6 py-4 text-slate-500">{log.id}</td>
+                      <td className="px-6 py-4 text-slate-500">{log.id.slice(0, 8)}...</td>
                       <td className="px-6 py-4 text-blue-400 font-bold">{log.action}</td>
                       <td className="px-6 py-4 text-slate-400">{log.source}</td>
                       <td className="px-6 py-4">
@@ -97,9 +115,14 @@ const GovernanceModule: React.FC = () => {
                           {log.status}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-slate-500">{log.time}</td>
+                      <td className="px-6 py-4 text-slate-500">{formatDate(log.timestamp)}</td>
                     </tr>
                   ))}
+                  {logs.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="text-center py-6 text-slate-500">No audit logs found. System initialization pending...</td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>

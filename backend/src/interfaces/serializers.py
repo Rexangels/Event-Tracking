@@ -1,5 +1,6 @@
+
 from rest_framework import serializers
-from infrastructure.models import EventModel, MediaModel
+from infrastructure.models import EventModel, MediaModel, AuditLog
 
 class MediaSerializer(serializers.ModelSerializer):
     class Meta:
@@ -8,8 +9,10 @@ class MediaSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at']
 
 class EventReportSerializer(serializers.ModelSerializer):
+    """
+    Serializer for Event Reports with location support.
+    """
     media_attachments = MediaSerializer(many=True, read_only=True)
-    # Allow uploading files separately or handling them in the view
     
     class Meta:
         model = EventModel
@@ -19,3 +22,10 @@ class EventReportSerializer(serializers.ModelSerializer):
             'media_attachments', 'trust_score', 'created_at'
         ]
         read_only_fields = ['id', 'status', 'trust_score', 'created_at']
+
+class AuditLogSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AuditLog
+        fields = '__all__'
+
+

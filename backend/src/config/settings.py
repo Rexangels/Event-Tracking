@@ -25,22 +25,38 @@ SECRET_KEY = 'django-insecure-_@tedvgp67uyz73p48d@&^@!pf$7o$8r!c(+ghgiek3dcshu=f
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', '[::1]']
 
 
 # Application definition
 
 INSTALLED_APPS = [
+    'daphne',  # ASGI server, must be first
+    'channels',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    # NOTE: django.contrib.gis removed - GDAL not available on Windows
+    # Using pure Python geospatial calculations instead
     'rest_framework',
+    'rest_framework.authtoken',
     'infrastructure',
     'corsheaders',
 ]
+
+# Django Channels configuration
+ASGI_APPLICATION = 'config.asgi.application'
+
+# Channel layer - using in-memory for development
+# For production, use Redis: channels_redis.core.RedisChannelLayer
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels.layers.InMemoryChannelLayer'
+    }
+}
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
@@ -75,6 +91,8 @@ WSGI_APPLICATION = 'config.wsgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
+# Using SQLite with pure Python geospatial calculations
+# Can migrate to PostGIS for production when environment supports GDAL
 
 DATABASES = {
     'default': {

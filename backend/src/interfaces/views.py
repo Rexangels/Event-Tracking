@@ -9,6 +9,12 @@ from django.db.models import Count, Q
 from domain.entities import EventSeverity, EventStatus
 import json
 
+from rest_framework import viewsets, permissions
+from rest_framework.authtoken.views import ObtainAuthToken
+from rest_framework.authtoken.models import Token
+from infrastructure.models import AuditLog
+from .serializers import AuditLogSerializer # Assuming AuditLogSerializer is in the same .serializers file
+
 class EventReportCreateView(APIView):
     parser_classes = (MultiPartParser, FormParser)
 
@@ -41,10 +47,49 @@ class EventReportCreateView(APIView):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class EventListAdminView(APIView):
+    """
+    List events with optional geospatial filtering.
+    
+    Query Parameters:
+        - bbox: Bounding box filter (minLon,minLat,maxLon,maxLat)
+        - severity: Filter by severity level
+        - status: Filter by event status
+        - limit: Maximum number of results (default 100)
+    """
     def get(self, request, *args, **kwargs):
-        # In a real app, add permission_classes = [IsAdminUser]
-        events = EventModel.objects.all().order_by('-created_at')
-        serializer = EventReportSerializer(events, many=True)
+        queryset = EventModel.objects.all()
+        
+        # Geospatial: Bounding Box Filter (pure Python using lat/lon ranges)
+        bbox_param = request.query_params.get('bbox')
+        if bbox_param:
+            try:
+                coords = [float(c) for c in bbox_param.split(',')]
+                if len(coords) == 4:
+                    min_lon, min_lat, max_lon, max_lat = coords
+                    queryset = queryset.filter(
+                        latitude__gte=min_lat,
+                        latitude__lte=max_lat,
+                        longitude__gte=min_lon,
+                        longitude__lte=max_lon
+                    )
+            except (ValueError, TypeError):
+                pass  # Invalid bbox, ignore filter
+        
+        # Severity Filter
+        severity = request.query_params.get('severity')
+        if severity:
+            queryset = queryset.filter(severity=severity.lower())
+        
+        # Status Filter
+        status_filter = request.query_params.get('status')
+        if status_filter:
+            queryset = queryset.filter(status=status_filter.lower())
+        
+        # Limit results for performance
+        limit = int(request.query_params.get('limit', 100))
+        queryset = queryset.order_by('-created_at')[:limit]
+        
+        serializer = EventReportSerializer(queryset, many=True)
         return Response(serializer.data)
 
 class StatsSummaryView(APIView):
@@ -65,4 +110,30 @@ class StatsSummaryView(APIView):
             'critical_sectors': critical_events,
             'sensor_integrity': round(integrity, 1),
             'global_heat_index': round(heat_index, 1)
+        })
+
+class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    Read-only API endpoint for governance audit logs.
+    """
+    queryset = AuditLog.objects.all().order_by('-timestamp')
+    serializer_class = AuditLogSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+class CustomAuthToken(ObtainAuthToken):
+    """
+    Custom Auth Token View that returns user details along with the token.
+    """
+    def post(self, request, *args, **kwargs):
+        serializer = self.serializer_class(data=request.data,
+                                           context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        user = serializer.validated_data['user']
+        token, created = Token.objects.get_or_create(user=user)
+        return Response({
+            'token': token.key,
+            'user_id': user.pk,
+            'email': user.email,
+            'username': user.username,
+            'is_staff': user.is_staff
         })

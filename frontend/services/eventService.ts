@@ -39,6 +39,14 @@ const mapCategoryToType = (category: string): EventType => {
 };
 
 const transformBackendEvent = (backendEvent: BackendEvent): IntelligenceEvent => {
+    // Extract region from description if strictly following simulation format
+    // Format: "Automated stress test event generated in {Region} region."
+    let region = 'Unknown Region';
+    const simMatch = backendEvent.description?.match(/generated in (.+) region/);
+    if (simMatch && simMatch[1]) {
+        region = simMatch[1];
+    }
+
     return {
         id: backendEvent.id,
         timestamp: backendEvent.created_at,
@@ -47,7 +55,7 @@ const transformBackendEvent = (backendEvent: BackendEvent): IntelligenceEvent =>
         title: backendEvent.title || 'Untitled Event',
         description: backendEvent.description,
         location: `Lat: ${backendEvent.latitude?.toFixed(4)}, Lng: ${backendEvent.longitude?.toFixed(4)}`,
-        region: 'Unknown Region', // TODO: Implement region detection or add to backend
+        region: region,
         coords: {
             lat: backendEvent.latitude || 0,
             lng: backendEvent.longitude || 0
@@ -57,7 +65,8 @@ const transformBackendEvent = (backendEvent: BackendEvent): IntelligenceEvent =>
         metadata: {
             trust_score: backendEvent.trust_score,
             media: backendEvent.media_attachments
-        }
+        },
+        media_attachments: backendEvent.media_attachments
     };
 };
 
