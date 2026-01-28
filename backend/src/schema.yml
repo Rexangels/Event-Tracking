@@ -1,0 +1,402 @@
+openapi: 3.0.3
+info:
+  title: Sentinel Core API
+  version: 1.0.0
+  description: Enterprise-grade API for real-time global event intelligence.
+paths:
+  /api/v1/admin/events/:
+    get:
+      operationId: admin_events_list
+      description: |-
+        List events with optional geospatial filtering.
+
+        Query Parameters:
+            - bbox: Bounding box filter (minLon,minLat,maxLon,maxLat)
+            - severity: Filter by severity level
+            - status: Filter by event status
+            - limit: Maximum number of results (default 100)
+      parameters:
+      - in: query
+        name: bbox
+        schema:
+          type: string
+        description: minLon,minLat,maxLon,maxLat
+      - in: query
+        name: limit
+        schema:
+          type: integer
+      - in: query
+        name: severity
+        schema:
+          type: string
+      - in: query
+        name: status
+        schema:
+          type: string
+      tags:
+      - admin
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/EventReport'
+          description: ''
+  /api/v1/admin/events/{id}/{action}/:
+    post:
+      operationId: admin_events_create
+      description: 'Handle lifecycle actions for events: verify, escalate, archive.'
+      parameters:
+      - in: path
+        name: action
+        schema:
+          type: string
+          enum:
+          - archive
+          - escalate
+          - verify
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: pk
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - admin
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventReport'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/audit-logs/:
+    get:
+      operationId: audit_logs_list
+      description: Read-only API endpoint for governance audit logs.
+      tags:
+      - audit-logs
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AuditLog'
+          description: ''
+  /api/v1/audit-logs/{id}/:
+    get:
+      operationId: audit_logs_retrieve
+      description: Read-only API endpoint for governance audit logs.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this audit log.
+        required: true
+      tags:
+      - audit-logs
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditLog'
+          description: ''
+  /api/v1/auth/login/:
+    post:
+      operationId: auth_login_create
+      description: Custom Auth Token View that returns user details along with the
+        token.
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AuthToken'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AuthToken'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthToken'
+        required: true
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthToken'
+          description: ''
+  /api/v1/reports/:
+    post:
+      operationId: reports_create
+      tags:
+      - reports
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                description:
+                  type: string
+                category:
+                  type: string
+                severity:
+                  type: string
+                latitude:
+                  type: number
+                longitude:
+                  type: number
+                files:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      - {}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventReport'
+          description: ''
+  /api/v1/stats/summary/:
+    get:
+      operationId: stats_summary_retrieve
+      description: Returns aggregated data for the top-bar HUD (Active reports, Risk
+        index).
+      tags:
+      - stats
+      security:
+      - tokenAuth: []
+      - cookieAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+components:
+  schemas:
+    AuditLog:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        action:
+          type: string
+          maxLength: 50
+        source:
+          type: string
+          maxLength: 50
+        status:
+          type: string
+          maxLength: 20
+        details:
+          type: string
+          nullable: true
+        ip_address:
+          type: string
+          nullable: true
+        timestamp:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - action
+      - id
+      - source
+      - status
+      - timestamp
+    AuthToken:
+      type: object
+      properties:
+        username:
+          type: string
+          writeOnly: true
+        password:
+          type: string
+          writeOnly: true
+        token:
+          type: string
+          readOnly: true
+      required:
+      - password
+      - token
+      - username
+    EventReport:
+      type: object
+      description: Serializer for Event Reports with location support.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        title:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+        category:
+          type: string
+          maxLength: 100
+        severity:
+          $ref: '#/components/schemas/SeverityEnum'
+        status:
+          allOf:
+          - $ref: '#/components/schemas/StatusEnum'
+          readOnly: true
+        latitude:
+          type: number
+          format: double
+          nullable: true
+        longitude:
+          type: number
+          format: double
+          nullable: true
+        accuracy:
+          type: number
+          format: double
+        altitude:
+          type: number
+          format: double
+          nullable: true
+        media_attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/Media'
+          readOnly: true
+        trust_score:
+          type: number
+          format: double
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - description
+      - id
+      - media_attachments
+      - status
+      - trust_score
+    Media:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        file:
+          type: string
+          format: uri
+        file_type:
+          type: string
+          maxLength: 50
+        file_hash:
+          type: string
+          maxLength: 64
+        metadata: {}
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - file
+      - id
+    SeverityEnum:
+      enum:
+      - low
+      - medium
+      - high
+      - critical
+      type: string
+      description: |-
+        * `low` - LOW
+        * `medium` - MEDIUM
+        * `high` - HIGH
+        * `critical` - CRITICAL
+    StatusEnum:
+      enum:
+      - pending
+      - verified
+      - rejected
+      - resolved
+      - escalated
+      - archived
+      type: string
+      description: |-
+        * `pending` - PENDING
+        * `verified` - VERIFIED
+        * `rejected` - REJECTED
+        * `resolved` - RESOLVED
+        * `escalated` - ESCALATED
+        * `archived` - ARCHIVED
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: sessionid
+    tokenAuth:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: Token-based authentication with required prefix "Token"

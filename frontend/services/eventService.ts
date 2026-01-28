@@ -72,23 +72,30 @@ const transformBackendEvent = (backendEvent: BackendEvent): IntelligenceEvent =>
 
 export const fetchEvents = async (): Promise<IntelligenceEvent[]> => {
     try {
-        const response = await api.get<any>('/admin/events/'); // Use any to allow runtime validation
-        console.log('API Response:', response); // Debug log
+        const response = await api.get<any>('/admin/events/');
+        console.log('API Response:', response);
+
+        let eventData = response.data;
+
+        // Handle DRF Pagination (if response.data is an object with 'results')
+        if (eventData && typeof eventData === 'object' && !Array.isArray(eventData) && eventData.results) {
+            eventData = eventData.results;
+        }
 
         // Validate response structure
-        if (!response.data || !Array.isArray(response.data)) {
-            console.error('Invalid API response format: Expected array, got:', response.data);
+        if (!eventData || !Array.isArray(eventData)) {
+            console.error('Invalid API response format: Expected array, got:', eventData);
             return [];
         }
 
-        return response.data.map(transformBackendEvent);
+        return eventData.map(transformBackendEvent);
     } catch (error) {
         console.error('Error fetching events:', error);
         return [];
     }
 };
 
-export const createEvent = async (eventData: FormData): Promise<IntelligenceEvent | null> => {
+export const createEvent = async (eventData: FormData): Promise<IntelligenceEvent | { error: string } | null> => {
     try {
         const response = await api.post<BackendEvent>('/reports/', eventData, {
             headers: {
@@ -96,8 +103,26 @@ export const createEvent = async (eventData: FormData): Promise<IntelligenceEven
             },
         });
         return transformBackendEvent(response.data);
-    } catch (error) {
+    } catch (error: any) {
         console.error('Error creating event:', error);
+
+        if (error.response?.data) {
+            // Return detailed validation errors from DRF
+            const details = Object.entries(error.response.data)
+                .map(([key, val]) => `${key}: ${Array.isArray(val) ? val.join(', ') : val}`)
+                .join(' | ');
+            return { error: `SUBMISSION_ERROR: ${details}` };
+        }
+
+        return { error: error.message || 'Unknown network error' };
+    }
+};
+export const updateEventStatus = async (eventId: string, action: 'verify' | 'escalate' | 'archive'): Promise<IntelligenceEvent | null> => {
+    try {
+        const response = await api.post<BackendEvent>(`/admin/events/${eventId}/${action}/`);
+        return transformBackendEvent(response.data);
+    } catch (error) {
+        console.error(`Error performing ${action} on event ${eventId}:`, error);
         return null;
     }
 };

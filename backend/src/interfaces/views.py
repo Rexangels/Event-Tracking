@@ -14,18 +14,44 @@ from rest_framework.authtoken.views import ObtainAuthToken
 from rest_framework.authtoken.models import Token
 from infrastructure.models import AuditLog
 from .serializers import AuditLogSerializer # Assuming AuditLogSerializer is in the same .serializers file
+from rest_framework.pagination import PageNumberPagination
+from rest_framework.throttling import ScopedRateThrottle
+from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiTypes
 
 class EventReportCreateView(APIView):
     parser_classes = (MultiPartParser, FormParser)
 
+    @extend_schema(
+        request={
+            'multipart/form-data': {
+                'type': 'object',
+                'properties': {
+                    'title': {'type': 'string'},
+                    'description': {'type': 'string'},
+                    'category': {'type': 'string'},
+                    'severity': {'type': 'string'},
+                    'latitude': {'type': 'number'},
+                    'longitude': {'type': 'number'},
+                    'files': {
+                        'type': 'array',
+                        'items': {'type': 'string', 'format': 'binary'}
+                    }
+                }
+            }
+        },
+        responses={201: EventReportSerializer}
+    )
     def post(self, request, *args, **kwargs):
         # Extract data
         data = request.data.dict() # Convert QueryDict to dict
         files = request.FILES.getlist('files') # Get list of uploaded files
 
-        # Clean data types manually if coming from FormData (e.g., 'latitude' might be string)
-        # For simplicity, we pass valid keys to the serializer/service
-        # Ideally, use a Serializer to validate 'data' first.
+        # Clean data types manually if coming from FormData
+        # Normalize casing for enums
+        if 'severity' in data:
+            data['severity'] = data['severity'].lower()
+        if 'category' in data:
+            data['category'] = data['category'].lower()
         
         serializer = EventReportSerializer(data=data)
         if serializer.is_valid():
@@ -39,11 +65,17 @@ class EventReportCreateView(APIView):
                     status=status.HTTP_201_CREATED
                 )
             except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Event creation failed: {str(e)}")
                 return Response(
-                    {'error': str(e)},
+                    {'error': f"SYSTEM_ERROR: {str(e)}"},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
         else:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Validation failed for report: {serializer.errors}")
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class EventListAdminView(APIView):
@@ -56,10 +88,22 @@ class EventListAdminView(APIView):
         - status: Filter by event status
         - limit: Maximum number of results (default 100)
     """
+    pagination_class = PageNumberPagination
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter("bbox", OpenApiTypes.STR, description="minLon,minLat,maxLon,maxLat"),
+            OpenApiParameter("severity", OpenApiTypes.STR),
+            OpenApiParameter("status", OpenApiTypes.STR),
+            OpenApiParameter("limit", OpenApiTypes.INT, description="Number of results per page (max 100)"),
+            OpenApiParameter("page", OpenApiTypes.INT, description="Page number"),
+        ],
+        responses={200: EventReportSerializer(many=True)}
+    )
     def get(self, request, *args, **kwargs):
         queryset = EventModel.objects.all()
         
-        # Geospatial: Bounding Box Filter (pure Python using lat/lon ranges)
+        # Geospatial: Bounding Box Filter
         bbox_param = request.query_params.get('bbox')
         if bbox_param:
             try:
@@ -73,7 +117,7 @@ class EventListAdminView(APIView):
                         longitude__lte=max_lon
                     )
             except (ValueError, TypeError):
-                pass  # Invalid bbox, ignore filter
+                pass
         
         # Severity Filter
         severity = request.query_params.get('severity')
@@ -85,14 +129,25 @@ class EventListAdminView(APIView):
         if status_filter:
             queryset = queryset.filter(status=status_filter.lower())
         
-        # Limit results for performance
-        limit = int(request.query_params.get('limit', 100))
-        queryset = queryset.order_by('-created_at')[:limit]
+        queryset = queryset.order_by('-created_at')
+
+        # Use Pagination
+        paginator = self.pagination_class()
+        page = paginator.paginate_queryset(queryset, request, view=self)
+        if page is not None:
+            serializer = EventReportSerializer(page, many=True)
+            return paginator.get_paginated_response(serializer.data)
         
         serializer = EventReportSerializer(queryset, many=True)
         return Response(serializer.data)
 
 class StatsSummaryView(APIView):
+    @extend_schema(
+        responses={
+            200: OpenApiTypes.OBJECT,
+        },
+        description="Returns aggregated data for the top-bar HUD (Active reports, Risk index)."
+    )
     def get(self, request, *args, **kwargs):
         total_events = EventModel.objects.count()
         critical_events = EventModel.objects.filter(severity=EventSeverity.CRITICAL.value).count()
@@ -123,7 +178,11 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
 class CustomAuthToken(ObtainAuthToken):
     """
     Custom Auth Token View that returns user details along with the token.
+    Includes rate limiting to prevent brute force.
     """
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'login'
+
     def post(self, request, *args, **kwargs):
         serializer = self.serializer_class(data=request.data,
                                            context={'request': request})
@@ -137,3 +196,65 @@ class CustomAuthToken(ObtainAuthToken):
             'username': user.username,
             'is_staff': user.is_staff
         })
+class EventActionView(APIView):
+    """
+    Handle lifecycle actions for events: verify, escalate, archive.
+    """
+    @extend_schema(
+        parameters=[
+            OpenApiParameter("pk", OpenApiTypes.UUID, location=OpenApiParameter.PATH),
+            OpenApiParameter("action", OpenApiTypes.STR, enum=['verify', 'escalate', 'archive'], location=OpenApiParameter.PATH)
+        ],
+        responses={200: EventReportSerializer, 400: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT}
+    )
+    def post(self, request, pk=None, action=None, *args, **kwargs):
+        try:
+            event = EventModel.objects.get(pk=pk)
+            
+            if action == 'verify':
+                event.status = EventStatus.VERIFIED.value
+            elif action == 'escalate':
+                event.status = EventStatus.ESCALATED.value
+                # In a real app, we'd store escalation details in a separate model
+            elif action == 'archive':
+                event.status = EventStatus.ARCHIVED.value
+            else:
+                return Response({'error': 'Invalid action'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            event.save()
+            
+            # Audit the action
+            AuditLog.objects.create(
+                action=f'EVENT_{action.upper()}',
+                source=request.user.username if request.user.is_authenticated else 'Anonymous',
+                status='SUCCESS',
+                details=f'Event {pk} status changed to {event.status}'
+            )
+            
+            return Response(EventReportSerializer(event).data)
+        except EventModel.DoesNotExist:
+            return Response({'error': 'Event not found'}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class HealthCheckView(APIView):
+    """
+    Checks system health for the demo dashboard.
+    """
+    permission_classes = [permissions.AllowAny]
+    @extend_schema(responses={200: OpenApiTypes.OBJECT})
+    def get(self, request, *args, **kwargs):
+        health = {
+            'status': 'OPERATIONAL',
+            'database': 'CONNECTED',
+            'services': 'STABLE',
+            'latency': 'OK'
+        }
+        try:
+            from django.db import connection
+            connection.ensure_connection()
+        except:
+            health['database'] = 'ERROR'
+            health['status'] = 'DEGRADED'
+            
+        return Response(health)

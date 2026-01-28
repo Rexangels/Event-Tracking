@@ -2,13 +2,19 @@ import React from 'react';
 import { IntelligenceEvent } from '../types';
 import { MAP_COLORS, EVENT_ICONS } from '../constants';
 import MediaPlayer from './MediaPlayer';
+import { updateEventStatus } from '../services/eventService';
+import EscalationForm from './EscalationForm';
 
 interface EventDetailPanelProps {
     event: IntelligenceEvent | null;
     onClose: () => void;
+    onStatusUpdate?: (event: IntelligenceEvent) => void;
 }
 
-const EventDetailPanel: React.FC<EventDetailPanelProps> = ({ event, onClose }) => {
+const EventDetailPanel: React.FC<EventDetailPanelProps> = ({ event, onClose, onStatusUpdate }) => {
+    const [isEscalating, setIsEscalating] = React.useState(false);
+    const [isProcessing, setIsProcessing] = React.useState(false);
+
     if (!event) return null;
 
     const severityColor = MAP_COLORS[event.severity];
@@ -23,6 +29,22 @@ const EventDetailPanel: React.FC<EventDetailPanelProps> = ({ event, onClose }) =
     };
 
     const { date, time } = formatTimestamp(event.timestamp);
+
+    const handleAction = async (action: 'verify' | 'escalate' | 'archive') => {
+        setIsProcessing(true);
+        const updatedEvent = await updateEventStatus(event.id, action);
+        if (updatedEvent && onStatusUpdate) {
+            onStatusUpdate(updatedEvent);
+            if (action !== 'escalate') onClose();
+        }
+        setIsProcessing(false);
+    };
+
+    const onEscalateConfirm = (level: string, reason: string) => {
+        console.log(`Escalating to ${level} with reason: ${reason}`);
+        handleAction('escalate');
+        setIsEscalating(false);
+    };
 
     return (
         <div className="fixed inset-y-0 right-0 w-[420px] bg-slate-950 border-l border-slate-800 shadow-2xl z-50 flex flex-col animate-in slide-in-from-right duration-300">
@@ -111,8 +133,8 @@ const EventDetailPanel: React.FC<EventDetailPanelProps> = ({ event, onClose }) =
                 <div className="p-5 border-b border-slate-800/50">
                     <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Verification Status</h3>
                     <div className={`flex items-center gap-2 p-3 rounded-lg border ${event.verified
-                            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-                            : 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+                        ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                        : 'bg-amber-500/10 border-amber-500/30 text-amber-400'
                         }`}>
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             {event.verified ? (
@@ -139,16 +161,38 @@ const EventDetailPanel: React.FC<EventDetailPanelProps> = ({ event, onClose }) =
             </div>
 
             {/* Action Footer */}
-            <div className="shrink-0 px-5 py-4 border-t border-slate-800 bg-slate-900/50 flex gap-2">
-                <button className="flex-1 py-2 px-4 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold uppercase tracking-widest rounded transition-colors">
-                    Verify
-                </button>
-                <button className="flex-1 py-2 px-4 bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold uppercase tracking-widest rounded transition-colors">
-                    Escalate
-                </button>
-                <button className="py-2 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold uppercase tracking-widest rounded transition-colors">
-                    Archive
-                </button>
+            <div className="shrink-0 px-5 py-6 border-t border-slate-800 bg-slate-900/50">
+                {isEscalating ? (
+                    <EscalationForm
+                        onEscalate={onEscalateConfirm}
+                        onCancel={() => setIsEscalating(false)}
+                    />
+                ) : (
+                    <div className="flex gap-2">
+                        <button
+                            onClick={() => handleAction('verify')}
+                            disabled={isProcessing || event.verified}
+                            className={`flex-1 py-2 px-4 text-white text-xs font-bold uppercase tracking-widest rounded transition-colors ${event.verified ? 'bg-slate-800 cursor-not-allowed text-slate-500' : 'bg-emerald-600 hover:bg-emerald-500'
+                                }`}
+                        >
+                            {isProcessing ? '...' : 'Verify'}
+                        </button>
+                        <button
+                            onClick={() => setIsEscalating(true)}
+                            disabled={isProcessing}
+                            className="flex-1 py-2 px-4 bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold uppercase tracking-widest rounded transition-colors disabled:opacity-50"
+                        >
+                            Escalate
+                        </button>
+                        <button
+                            onClick={() => handleAction('archive')}
+                            disabled={isProcessing}
+                            className="py-2 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold uppercase tracking-widest rounded transition-colors disabled:opacity-50"
+                        >
+                            Archive
+                        </button>
+                    </div>
+                )}
             </div>
         </div>
     );

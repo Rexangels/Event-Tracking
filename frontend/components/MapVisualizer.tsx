@@ -37,6 +37,7 @@ const MapVisualizer: React.FC<MapVisualizerProps> = ({
 
   // Cache for subregions to prevent flickering/re-fetching
   const subregionCache = useRef<Record<string, any>>({});
+  const lastLoadedRegion = useRef<string | null>(null);
 
   const width = 1000;
   const height = 600;
@@ -45,27 +46,43 @@ const MapVisualizer: React.FC<MapVisualizerProps> = ({
   const CLUSTER_ZOOM_THRESHOLD = 4;
   const CLUSTER_RADIUS = 50;
 
-  // Stable clustering function
+  // Stable clustering function using Quadtree for high performance
   const computeClusters = useCallback((
     projectedEvents: Array<{ event: IntelligenceEvent; x: number; y: number }>,
     zoomLevel: number
   ) => {
-    if (projectedEvents.length < 10) {
-      return null;
-    }
+    if (projectedEvents.length < 5) return null;
 
     const clusters: Cluster[] = [];
     const assigned = new Set<string>();
     const radius = CLUSTER_RADIUS / zoomLevel;
 
-    projectedEvents.forEach(({ event, x, y }) => {
-      if (assigned.has(event.id)) return;
+    // Build quadtree for fast spatial indexing O(N log N)
+    const tree = d3.quadtree<{ event: IntelligenceEvent; x: number; y: number }>()
+      .x(d => d.x)
+      .y(d => d.y)
+      .addAll(projectedEvents);
 
-      const nearby = projectedEvents.filter(other => {
-        if (assigned.has(other.event.id)) return false;
-        const dx = other.x - x;
-        const dy = other.y - y;
-        return Math.sqrt(dx * dx + dy * dy) < radius;
+    projectedEvents.forEach((d) => {
+      if (assigned.has(d.event.id)) return;
+
+      const nearby: Array<{ event: IntelligenceEvent; x: number; y: number }> = [];
+
+      // Fast spatial search in the quadtree
+      tree.visit((node, x1, y1, x2, y2) => {
+        if (!node.length) {
+          do {
+            const data = (node as any).data;
+            if (data && !assigned.has(data.event.id)) {
+              const dx = data.x - d.x;
+              const dy = data.y - d.y;
+              if (Math.sqrt(dx * dx + dy * dy) < radius) {
+                nearby.push(data);
+              }
+            }
+          } while ((node = (node as any).next));
+        }
+        return x1 > d.x + radius || x2 < d.x - radius || y1 > d.y + radius || y2 < d.y - radius;
       });
 
       if (nearby.length >= 2) {
@@ -112,7 +129,8 @@ const MapVisualizer: React.FC<MapVisualizerProps> = ({
         });
     };
 
-    const k = transform?.k || 1;
+    // Use the provided zoomLevel (k) for scaling to keep icons pinpoint
+    const k = zoomLevel;
 
     // Render individual events
     const renderEvents = (eventData: typeof projectedEvents) => {
@@ -141,7 +159,7 @@ const MapVisualizer: React.FC<MapVisualizerProps> = ({
       // Icon markers
       eventGroups.append('g')
         .attr('class', 'event-marker')
-        .attr('transform', `scale(${1 / Math.sqrt(k)})`)
+        .attr('transform', `scale(${1.2 / k})`)
         .each(function (d) {
           const g = d3.select(this);
           const isSelected = d.event.id === selectedEventId;
@@ -190,7 +208,7 @@ const MapVisualizer: React.FC<MapVisualizerProps> = ({
 
       clusterGroups.append('circle')
         .attr('class', 'cluster-circle')
-        .attr('r', d => (15 + Math.log(d.count) * 5) / Math.sqrt(k))
+        .attr('r', d => (15 + Math.log(d.count) * 5) / k)
         .attr('fill', d => getClusterColor(d.count))
         .attr('stroke', '#fff')
         .attr('stroke-width', 2 / k)
@@ -202,9 +220,12 @@ const MapVisualizer: React.FC<MapVisualizerProps> = ({
         .attr('text-anchor', 'middle')
         .attr('dy', '0.35em')
         .attr('fill', '#fff')
-        .attr('font-size', `${11 / Math.sqrt(k)}px`)
+        .attr('font-size', `${11 / k}px`)
         .attr('font-weight', 'bold')
-        .text(d => d.count > 99 ? '99+' : d.count);
+        .text(d => {
+          if (d.count >= 1000) return `${(d.count / 1000).toFixed(1)}k`;
+          return d.count > 99 ? '99+' : d.count;
+        });
     };
 
     const clusterResult = computeClusters(projectedEvents, zoomLevel);
@@ -216,16 +237,15 @@ const MapVisualizer: React.FC<MapVisualizerProps> = ({
     }
   }, [events, selectedEventId, onEventClick, computeClusters]);
 
-  // Main effect - only runs on initial mount and when events/regions change
+  // Initialize Map (Static Layers & Zoom) - Runs Once
   useEffect(() => {
-    if (!svgRef.current) return;
+    if (!svgRef.current || gRef.current) return; // Prevent double init
 
     const svg = d3.select(svgRef.current);
-    svg.selectAll('*').remove();
-
     const g = svg.append('g');
     gRef.current = g;
 
+    // Layer Order
     const heatmapLayer = g.append('g').attr('class', 'heatmap-layer');
     const regionsLayer = g.append('g').attr('class', 'regions-layer');
     g.append('g').attr('class', 'events-layer');
@@ -237,190 +257,267 @@ const MapVisualizer: React.FC<MapVisualizerProps> = ({
 
     const path = d3.geoPath().projection(projection);
 
-    // Zoom behavior
     const zoom = d3.zoom<SVGSVGElement, unknown>()
       .scaleExtent([1, 20])
-      .on('zoom', (event: d3.D3ZoomEvent<SVGSVGElement, unknown>) => {
+      .on('zoom', (event) => {
         g.attr('transform', event.transform.toString());
         const k = event.transform.k;
         currentZoomRef.current = k;
-        setZoomDisplay(k); // Only updates UI display
+        setZoomDisplay(k);
 
-        // Update stroke widths
-        g.selectAll('.region').attr('stroke-width', (d: any) =>
-          (d?.properties?.name === selectedRegion ? 1.5 : 0.5) / Math.sqrt(k)
-        );
+        // Update regions stroke
+        g.selectAll('.region').attr('stroke-width', 0.5 / Math.sqrt(k));
+        g.selectAll('.subregion').attr('stroke-width', 0.2 / k);
 
-        // Re-render events with new zoom level
+        // Update labels
+        g.selectAll('.state-label')
+          .attr('font-size', 6 / Math.sqrt(k))
+          .attr('opacity', k > 8 ? 0 : 1);
+
+        // Trigger dynamic layer updates
         updateEventsLayer(k, event.transform);
       });
 
     zoomRef.current = zoom;
     svg.call(zoom);
 
-    // Initial load of world map
-    d3.json('/world.geojson')
-      .then((data: any) => {
-        // Draw regions
-        regionsLayer.selectAll('.region')
-          .data(data.features)
-          .enter()
-          .append('path')
-          .attr('class', 'region')
-          .attr('d', path as any)
-          .attr('fill', (d: any) => d.properties.name === selectedRegion ? '#1e293b' : '#0f172a')
-          .attr('stroke', (d: any) => d.properties.name === selectedRegion ? '#3b82f6' : '#1e293b')
-          .attr('stroke-width', 0.5)
-          .style('cursor', 'pointer')
-          .style('transition', 'fill 0.2s ease')
-          .on('click', function (event, d: any) {
-            event.stopPropagation();
-            const name = d.properties.name;
-            const isDeselect = name === selectedRegion;
-            onRegionSelect(isDeselect ? null : name);
+    // Load World Map
+    d3.json('/world.geojson').then((data: any) => {
+      regionsLayer.selectAll('.region')
+        .data(data.features)
+        .enter()
+        .append('path')
+        .attr('class', 'region')
+        .attr('d', path as any)
+        .attr('fill', '#0f172a')
+        .attr('stroke', '#1e293b')
+        .attr('stroke-width', 0.5)
+        .style('cursor', 'pointer')
+        .on('click', (event, d: any) => {
+          event.stopPropagation();
+          const name = d.properties.name;
+          onRegionSelect(name === selectedRegion ? null : name);
+        });
 
-            if (!isDeselect) {
-              const [[x0, y0], [x1, y1]] = path.bounds(d);
-              svg.transition().duration(750).call(
-                zoom.transform as any,
-                d3.zoomIdentity
-                  .translate(width / 2, height / 2)
-                  .scale(Math.min(8, 0.9 / Math.max((x1 - x0) / width, (y1 - y0) / height)))
-                  .translate(-(x0 + x1) / 2, -(y0 + y1) / 2)
-              );
-            }
-          })
-          .on('mouseover', function (event, d: any) {
-            if (d.properties.name !== selectedRegion) {
-              d3.select(this).attr('fill', '#1e293b').attr('stroke', '#334155');
-            }
-          })
-          .on('mouseout', function (event, d: any) {
-            if (d.properties.name !== selectedRegion) {
-              d3.select(this).attr('fill', '#0f172a').attr('stroke', '#1e293b');
-            }
-          });
+      // Graticule
+      regionsLayer.append('path')
+        .datum(d3.geoGraticule()())
+        .attr('d', path as any)
+        .attr('fill', 'none')
+        .attr('stroke', '#1e293b')
+        .attr('stroke-width', 0.1)
+        .attr('opacity', 0.4);
+    });
 
-        // Grid lines
-        const graticule = d3.geoGraticule();
-        regionsLayer.append('path')
-          .datum(graticule())
-          .attr('d', path as any)
-          .attr('fill', 'none')
-          .attr('stroke', '#1e293b')
-          .attr('stroke-width', 0.1)
-          .attr('opacity', 0.4);
-
-        // Heatmap layer
-        if (showHeatmap && events.length > 0) {
-          const projectedEvents = events.map(event => {
-            const [x, y] = projection([event.coords.lng, event.coords.lat])!;
-            return { x, y };
-          });
-
-          const density = d3.contourDensity<{ x: number; y: number }>()
-            .x(d => d.x)
-            .y(d => d.y)
-            .size([width, height])
-            .bandwidth(30)
-            .thresholds(10);
-
-          const contours = density(projectedEvents);
-          const colorScale = d3.scaleSequential(d3.interpolateInferno)
-            .domain([0, d3.max(contours, c => c.value) || 1]);
-
-          heatmapLayer.selectAll('.contour')
-            .data(contours)
-            .enter()
-            .append('path')
-            .attr('class', 'contour')
-            .attr('d', d3.geoPath())
-            .attr('fill', d => colorScale(d.value))
-            .attr('opacity', 0.4)
-            .attr('stroke', 'none');
-        }
-
-        // Initial event render
-        updateEventsLayer(currentZoomRef.current);
-      })
-      .catch(err => console.error("Failed to load world GeoJSON:", err));
-
-    // Color scale for subregions - using Tableau10 for safety
-    // Fallback to a manual array if scheme is missing
-    const safeScheme = d3.schemeTableau10 || ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'];
-    const colorScale = d3.scaleOrdinal(safeScheme);
-
-    const loadSubregions = (url: string, regionKey: string) => {
-      const renderSubregions = (features: any[]) => {
-        if (!g || !features || !Array.isArray(features)) return;
-
-        // Remove existing first to avoid duplicates/ghosting during transition
+    // Background Click (World Reset)
+    svg.on('click', (event) => {
+      if (event.target.tagName === 'svg') {
+        onRegionSelect(null);
+        lastLoadedRegion.current = null;
         g.select('.subregions').remove();
+        g.select('.subregion-labels').remove();
+        svg.transition().duration(750).call(zoom.transform as any, d3.zoomIdentity);
+      }
+    });
 
-        const subregionsGroup = g.select('.regions-layer').append('g').attr('class', 'subregions');
+  }, []); // Strictly empty dependency array
 
-        subregionsGroup.selectAll('.subregion')
+  // Update Events & Heatmap (Dynamic)
+  useEffect(() => {
+    if (!gRef.current || !projectionRef.current) return;
+
+    // Update Events
+    updateEventsLayer(currentZoomRef.current);
+
+    // Update Heatmap (Recalculate on data OR significant zoom change)
+    const heatmapLayer = gRef.current.select('.heatmap-layer');
+    heatmapLayer.selectAll('*').remove();
+
+    if (showHeatmap && events.length > 0) {
+      const projection = projectionRef.current;
+      const k = currentZoomRef.current;
+
+      // 1. Intelligence Weighting: Duplicate points based on severity
+      // This makes Critical hotspots appear "hotter"
+      const weightedEvents: Array<{ x: number; y: number }> = [];
+      events.forEach(e => {
+        const [x, y] = projection([e.coords.lng, e.coords.lat])!;
+        let weight = 1;
+        if (e.severity === 'critical') weight = 5;
+        else if (e.severity === 'high') weight = 3;
+        else if (e.severity === 'medium') weight = 2;
+
+        for (let i = 0; i < weight; i++) {
+          weightedEvents.push({ x, y });
+        }
+      });
+
+      // 2. Zoom-Responsive Bandwidth: Sharpen blobs when zooming in
+      // Base bandwidth 30, narrows down as we zoom in
+      const dynamicBandwidth = Math.max(5, 30 / Math.pow(k, 0.5));
+
+      const density = d3.contourDensity<{ x: number; y: number }>()
+        .x(d => d.x)
+        .y(d => d.y)
+        .size([width, height])
+        .bandwidth(dynamicBandwidth)
+        .thresholds(15); // More thresholds for smoother gradients
+
+      const contours = density(weightedEvents);
+      const colorScale = d3.scaleSequential(d3.interpolateInferno)
+        .domain([0, d3.max(contours, c => c.value) || 1]);
+
+      heatmapLayer.selectAll('.contour')
+        .data(contours)
+        .enter()
+        .append('path')
+        .attr('class', 'contour')
+        .attr('d', d3.geoPath())
+        .attr('fill', d => colorScale(d.value))
+        .attr('opacity', 0.5);
+    }
+  }, [events, showHeatmap, zoomDisplay, updateEventsLayer]); // Added zoomDisplay to trigger re-calculation
+
+  // Handle Region Selection / Subregions
+  useEffect(() => {
+    if (!gRef.current || !projectionRef.current) return;
+    const g = gRef.current;
+    const regionsLayer = g.select('.regions-layer');
+
+    // Update World Region Styling
+    regionsLayer.selectAll('.region')
+      .attr('fill', (d: any) => d.properties.name === selectedRegion ? '#1e293b' : '#0f172a')
+      .attr('stroke', (d: any) => d.properties.name === selectedRegion ? '#3b82f6' : '#1e293b');
+
+    // Subregion Loading Logic
+    const loadSubregions = (url: string, regionKey: string) => {
+      const renderSub = (features: any[]) => {
+        g.select('.subregions').remove();
+        g.select('.subregion-labels').remove();
+
+        const subG = regionsLayer.append('g').attr('class', 'subregions');
+        const labelsG = regionsLayer.append('g').attr('class', 'subregion-labels');
+        const path = d3.geoPath().projection(projectionRef.current!);
+        const colorScale = d3.scaleOrdinal(d3.schemeTableau10 || d3.schemeCategory10);
+
+        // Group LGAs by State
+        const states = d3.groups(features, (d: any) => d.properties.NAME_1 || 'Unknown');
+
+        // Render LGA Paths
+        subG.selectAll('.subregion')
           .data(features)
           .enter()
           .append('path')
           .attr('class', 'subregion')
           .attr('d', path as any)
           .attr('fill', (d: any) => {
-            const key = d?.properties?.name || d?.id || 'unknown';
-            return colorScale(key);
+            const stateName = d.properties.NAME_1 || d.properties.name || d.id;
+            const baseColor = d3.color(colorScale(stateName));
+            if (!baseColor) return colorScale(stateName);
+
+            // Deterministic variation based on LGA name
+            const lgaName = d.properties.NAME_2 || '';
+            let hash = 0;
+            for (let i = 0; i < lgaName.length; i++) hash = lgaName.charCodeAt(i) + ((hash << 5) - hash);
+            const shift = (hash % 20) - 10; // -10 to +10 range
+            return baseColor.brighter(shift / 10).toString();
           })
-          .attr('stroke', '#475569')
-          .attr('stroke-width', 0.5)
-          .attr('opacity', 0.8) // Slight transparency for texture
+          .attr('stroke', '#1e293b')
+          .attr('stroke-width', 0.2 / currentZoomRef.current)
+          .attr('opacity', 0.9)
           .style('cursor', 'pointer')
           .on('mouseover', function (event, d: any) {
-            d3.select(this).attr('opacity', 1).attr('stroke', '#fff').attr('stroke-width', 1);
+            d3.select(this).attr('opacity', 1).attr('stroke', '#fff').attr('stroke-width', 0.8 / currentZoomRef.current);
           })
-          .on('mouseout', function (event, d: any) {
-            d3.select(this).attr('opacity', 0.8).attr('stroke', '#475569').attr('stroke-width', 0.5);
+          .on('mouseout', function () {
+            d3.select(this).attr('opacity', 0.9).attr('stroke', '#1e293b').attr('stroke-width', 0.2 / currentZoomRef.current);
           })
-          .append('title')
-          .text((d: any) => d?.properties?.name || 'Unknown Region');
+          .on('click', (event, d: any) => {
+            event.stopPropagation();
+            if (!zoomRef.current || !svgRef.current) return;
+
+            const [[x0, y0], [x1, y1]] = path.bounds(d);
+            const dx = x1 - x0;
+            const dy = y1 - y0;
+            const x = (x0 + x1) / 2;
+            const y = (y0 + y1) / 2;
+            const scale = Math.max(1, Math.min(20, 0.8 / Math.max(dx / width, dy / height)));
+            const translate = [width / 2 - scale * x, height / 2 - scale * y];
+
+            d3.select(svgRef.current)
+              .transition()
+              .duration(750)
+              .call(
+                zoomRef.current.transform as any,
+                d3.zoomIdentity.translate(translate[0], translate[1]).scale(scale)
+              );
+          })
+          .append('title').text((d: any) => `${d.properties.NAME_1}\nLGA: ${d.properties.NAME_2}`);
+
+        // State Labels & Borders
+        states.forEach(([stateName, lgas]: [string, any[]]) => {
+          // Calculate State Centroid (approximate by averaging LGA centroids)
+          let sx = 0, sy = 0, count = 0;
+          lgas.forEach(lga => {
+            const centroid = path.centroid(lga);
+            if (!isNaN(centroid[0])) {
+              sx += centroid[0];
+              sy += centroid[1];
+              count++;
+            }
+          });
+
+          if (count > 0) {
+            const cx = sx / count;
+            const cy = sy / count;
+
+            // State Label
+            labelsG.append('text')
+              .attr('class', 'state-label')
+              .attr('x', cx)
+              .attr('y', cy)
+              .attr('text-anchor', 'middle')
+              .attr('font-size', 6 / Math.sqrt(currentZoomRef.current))
+              .attr('font-weight', 'bold')
+              .attr('fill', '#fff')
+              .attr('pointer-events', 'none')
+              .style('text-shadow', '0 0 3px #000')
+              .text(stateName);
+          }
+        });
+
+        // LGA Names are handled via tooltips (title tag) to keep visualization clean
       };
 
       if (subregionCache.current[regionKey]) {
-        renderSubregions(subregionCache.current[regionKey]);
+        renderSub(subregionCache.current[regionKey]);
       } else {
-        d3.json(url)
-          .then((data: any) => {
-            subregionCache.current[regionKey] = data.features;
-            renderSubregions(data.features);
-          })
-          .catch(err => console.error(`Failed to load ${regionKey} GeoJSON:`, err));
+        d3.json(url).then((data: any) => {
+          subregionCache.current[regionKey] = data.features;
+          renderSub(data.features);
+        });
       }
     };
 
-    // Handle Subregions
     if (selectedRegion === 'USA' || selectedRegion === 'United States of America') {
-      loadSubregions(
-        '/us-states.json',
-        'USA'
-      );
-    } else if (selectedRegion === 'Nigeria') {
-      loadSubregions(
-        '/nigeria.json',
-        'Nigeria'
-      );
-    } else {
-      // Remove subregions if not a supported country
-      g.select('.subregions').remove();
-    }
-
-
-    // Background click handler
-    svg.on('click', (event) => {
-      if (event.target.tagName === 'svg') {
-        onRegionSelect(null);
-        svg.transition().duration(750).call(zoom.transform as any, d3.zoomIdentity);
+      if (lastLoadedRegion.current !== 'USA') {
+        loadSubregions('/us-states.json', 'USA');
+        lastLoadedRegion.current = 'USA';
       }
-    });
+    } else if (selectedRegion === 'Nigeria') {
+      if (lastLoadedRegion.current !== 'Nigeria') {
+        loadSubregions('/nigeria.json', 'Nigeria');
+        lastLoadedRegion.current = 'Nigeria';
+      }
+    } else if (selectedRegion) {
+      // Clear if a different non-null region is selected
+      g.select('.subregions').remove();
+      g.select('.subregion-labels').remove();
+      lastLoadedRegion.current = null;
+    }
+    // If selectedRegion is null, we persist the last loaded layer (handling "cancel panel" use case)
 
-  }, [events, selectedRegion, showHeatmap, selectedEventId, onRegionSelect, updateEventsLayer]);
+  }, [selectedRegion]);
 
   const handleManualZoom = (direction: 'in' | 'out' | 'reset') => {
     if (!svgRef.current || !zoomRef.current) return;

@@ -51,4 +51,6 @@ To visualize **10,000+ events** without crashing the browser or overwhelming the
 
 ### Phase 6: AI Analysis (Deep Intelligence)
 *Why: To make sense of the noise.*
-- [ ] **Gemini Integration**: Summarize clusters. "50 reports of fire in this region -> Likely Wildfire Spreading".
+- [x] **Strategic Deep Dive Agent**: Interactive chat agent for cross-sector correlation.
+- [x] **Interactive Graph Generation**: AI-triggered D3 visualizations (Bar, Line, Network) for trend analysis.
+- [x] **OpenRouter Integration**: Robust pipeline supporting world-class models like Gemini 2.0 Flash.

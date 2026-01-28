@@ -1,0 +1,7 @@
+openapi: 3.0.3
+info:
+  title: Sentinel Core API
+  version: 1.0.0
+  description: Enterprise-grade API for real-time global event intelligence.
+paths: {}
+components: {}

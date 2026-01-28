@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { IntelligenceEvent } from '../types';
-import { getEventExplanation } from '../services/geminiService';
+import { intelligenceService } from '../services/ai/application/IntelligenceService';
 
 interface AIAgentPanelProps {
   selectedEvent: IntelligenceEvent | null;
@@ -15,7 +15,7 @@ const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ selectedEvent }) => {
     if (selectedEvent) {
       setLoading(true);
       setExplanation("");
-      getEventExplanation(selectedEvent).then(res => {
+      intelligenceService.getEventExplanation(selectedEvent).then(res => {
         setExplanation(res);
         setLoading(false);
       });

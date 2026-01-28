@@ -46,8 +46,8 @@ const ReportEventPage: React.FC = () => {
         const formData = new FormData();
         formData.append('title', title);
         formData.append('description', description);
-        formData.append('severity', severity);
-        formData.append('category', category);
+        formData.append('severity', severity.toLowerCase());
+        formData.append('category', category.toLowerCase());
 
         if (location) {
             formData.append('latitude', location.lat.toString());
@@ -61,11 +61,13 @@ const ReportEventPage: React.FC = () => {
 
         const result = await createEvent(formData);
 
-        if (result) {
+        // result is IntelligenceEvent | { error: string }
+        if (result && 'id' in result) {
             // Success animation or redirect
             navigate('/admin'); // Redirect to dashboard to see report
         } else {
-            alert("Failed to submit report. Please try again.");
+            const errorMsg = (result as any)?.error || "Failed to submit report. Please check required fields.";
+            alert(errorMsg);
             setIsSubmitting(false);
         }
     };

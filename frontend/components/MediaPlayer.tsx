@@ -24,11 +24,24 @@ const MediaPlayer: React.FC<MediaPlayerProps> = ({ media, className = '' }) => {
     }
 
     const currentMedia = media[currentIndex];
-    const baseUrl = 'http://localhost:8000'; // Backend URL
-
     const getMediaUrl = (file: string) => {
+        if (!file) return '';
         if (file.startsWith('http')) return file;
-        return `${baseUrl}${file}`;
+
+        const backendHost = `${window.location.protocol}//${window.location.hostname}:8000`;
+
+        // If the path already includes /media/, just prepend the host
+        if (file.startsWith('/media/')) {
+            return `${backendHost}${file}`;
+        }
+
+        // If it starts with / (but not /media/), prepend /media
+        if (file.startsWith('/')) {
+            return `${backendHost}/media${file}`;
+        }
+
+        // Otherwise it's a relative path, prepend /media/
+        return `${backendHost}/media/${file}`;
     };
 
     const renderMedia = (item: MediaAttachment, isFullscreen = false) => {
@@ -128,8 +141,8 @@ const MediaPlayer: React.FC<MediaPlayerProps> = ({ media, className = '' }) => {
                             key={item.id}
                             onClick={() => setCurrentIndex(idx)}
                             className={`w-12 h-12 rounded overflow-hidden border-2 transition-all shrink-0 ${idx === currentIndex
-                                    ? 'border-blue-500 ring-2 ring-blue-500/30'
-                                    : 'border-slate-700 hover:border-slate-500 opacity-60 hover:opacity-100'
+                                ? 'border-blue-500 ring-2 ring-blue-500/30'
+                                : 'border-slate-700 hover:border-slate-500 opacity-60 hover:opacity-100'
                                 }`}
                         >
                             {item.file_type === 'image' ? (

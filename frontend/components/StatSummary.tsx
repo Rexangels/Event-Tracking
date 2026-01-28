@@ -1,6 +1,7 @@
 
 import React, { useEffect, useState } from 'react';
 import api from '../services/api';
+import Tooltip from './ui/Tooltip';
 
 interface StatsData {
   active_reports: number;
@@ -36,38 +37,46 @@ const StatSummary: React.FC = () => {
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-4 gap-4 px-6 py-4 bg-slate-950 border-b border-slate-800">
-      <div className="flex flex-col">
-        <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Active Reports</span>
-        <div className="flex items-baseline gap-2">
-          <span className="text-2xl font-bold text-slate-100">{stats.active_reports.toLocaleString()}</span>
-          <span className="text-[10px] text-emerald-500 font-mono">+12.4%</span>
+      <Tooltip content="Total number of verified and unverified reports received in the last 24 hours.">
+        <div className="flex flex-col">
+          <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Active Reports</span>
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-bold text-slate-100">{stats.active_reports.toLocaleString()}</span>
+            <span className="text-[10px] text-emerald-500 font-mono">+12.4%</span>
+          </div>
         </div>
-      </div>
-      <div className="flex flex-col">
-        <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Critical Sectors</span>
-        <div className="flex items-baseline gap-2">
-          <span className={`text-2xl font-bold ${stats.critical_sectors > 0 ? 'text-red-500' : 'text-slate-100'}`}>
-            {stats.critical_sectors.toString().padStart(2, '0')}
-          </span>
-          <span className="text-[10px] text-slate-600 font-mono">/ 24 TOTAL</span>
+      </Tooltip>
+      <Tooltip content="Sectors currently reporting high-severity events requiring immediate attention.">
+        <div className="flex flex-col">
+          <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Critical Sectors</span>
+          <div className="flex items-baseline gap-2">
+            <span className={`text-2xl font-bold ${stats.critical_sectors > 0 ? 'text-red-500' : 'text-slate-100'}`}>
+              {stats.critical_sectors.toString().padStart(2, '0')}
+            </span>
+            <span className="text-[10px] text-slate-600 font-mono">/ 24 TOTAL</span>
+          </div>
         </div>
-      </div>
-      <div className="flex flex-col">
-        <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Sensor Integrity</span>
-        <div className="flex items-baseline gap-2">
-          <span className="text-2xl font-bold text-slate-100">{stats.sensor_integrity}%</span>
-          <span className="text-[10px] text-blue-400 font-mono">NOMINAL</span>
+      </Tooltip>
+      <Tooltip content="Operational status of the global distributed sensor network.">
+        <div className="flex flex-col">
+          <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Sensor Integrity</span>
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-bold text-slate-100">{stats.sensor_integrity}%</span>
+            <span className="text-[10px] text-blue-400 font-mono">NOMINAL</span>
+          </div>
         </div>
-      </div>
-      <div className="flex flex-col">
-        <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Global Heat Index</span>
-        <div className="flex items-baseline gap-2">
-          <span className={`text-2xl font-bold ${stats.global_heat_index > 7 ? 'text-orange-500' : 'text-slate-100'}`}>
-            {stats.global_heat_index}
-          </span>
-          <span className="text-[10px] text-slate-600 font-mono">{stats.global_heat_index > 5 ? 'ELEVATED' : 'STABLE'}</span>
+      </Tooltip>
+      <Tooltip content="Aggregated intensity of world-wide event activity.">
+        <div className="flex flex-col">
+          <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Global Heat Index</span>
+          <div className="flex items-baseline gap-2">
+            <span className={`text-2xl font-bold ${stats.global_heat_index > 7 ? 'text-orange-500' : 'text-slate-100'}`}>
+              {stats.global_heat_index}
+            </span>
+            <span className="text-[10px] text-slate-600 font-mono">{stats.global_heat_index > 5 ? 'ELEVATED' : 'STABLE'}</span>
+          </div>
         </div>
-      </div>
+      </Tooltip>
     </div>
   );
 };

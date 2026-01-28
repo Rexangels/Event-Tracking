@@ -13,7 +13,13 @@ export interface AuditLog {
 
 export const governanceService = {
     async getAuditLogs(): Promise<AuditLog[]> {
-        const response = await api.get<AuditLog[]>('/audit-logs/');
-        return response.data;
+        const response = await api.get<any>('/audit-logs/');
+        const data = response.data;
+
+        if (data && typeof data === 'object' && !Array.isArray(data) && data.results) {
+            return data.results;
+        }
+
+        return Array.isArray(data) ? data : [];
     }
 };

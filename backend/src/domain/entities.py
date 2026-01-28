@@ -14,6 +14,8 @@ class EventStatus(Enum):
     VERIFIED = "verified"
     REJECTED = "rejected"
     RESOLVED = "resolved"
+    ESCALATED = "escalated"
+    ARCHIVED = "archived"
 
 @dataclass
 class Location:

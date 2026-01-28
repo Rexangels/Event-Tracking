@@ -1,20 +1,24 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# 🛰️ Sentinel Intelligence Platform
 
-# Run and deploy your AI Studio app
+Real-time event intelligence and strategic analysis for high-stakes decision making.
 
-This contains everything you need to run your app locally.
+## 🌟 New Feature: Deep Dive Analytic Agent
+Leverage the **Google Agent Development Kit (ADK)** to perform cross-sector correlation. 
+- **Interactive Chat**: Consult with an AI analyst regarding complex geopolitical and security trends.
+- **D3 Visualizations**: AI-triggered interactive graphs (Bar, Line, Network) for immediate situational awareness.
+- **Multi-Vector Correlation**: Analyzes 100+ active event vectors simultaneously.
 
-View your app in AI Studio: https://ai.studio/apps/drive/1CcrBVUa_EOV3cdEhvduo-4TcqUZZOWyV
+## 🛠️ Run Locally
 
-## Run Locally
+**Prerequisites:** Node.js, OpenRouter API Key
 
-**Prerequisites:**  Node.js
-
-
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+1.  **Install dependencies**:
+    ```bash
+    npm install
+    ```
+2.  **Configure Environment**:
+    Create a `.env` file with your `VITE_OPENROUTER_API_KEY`.
+3.  **Run the app**:
+    ```bash
+    npm run dev
+    ```
