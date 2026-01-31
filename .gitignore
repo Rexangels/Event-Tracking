@@ -7,6 +7,14 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Environment variables - NEVER commit these!
+.env
+.env.local
+.env.development
+.env.production
+.env.*.local
+!.env.example
+
 node_modules
 dist
 dist-ssr

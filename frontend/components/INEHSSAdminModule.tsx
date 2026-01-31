@@ -200,6 +200,12 @@ const INEHSSAdminModule: React.FC = () => {
     const createAssignment = async () => {
         const isDirect = !!directAssignmentTemplate;
 
+        // Early validation: ensure we have either a report or a direct assignment context
+        if (!isDirect && !assignmentModalReport) {
+            setError('No report selected. Please select a report first.');
+            return;
+        }
+
         if ((!isDirect && !assignmentModalReport) || !selectedOfficer || (isDirect ? false : !selectedInspectionForm)) {
             setError('Please select an officer and inspection form');
             return;
