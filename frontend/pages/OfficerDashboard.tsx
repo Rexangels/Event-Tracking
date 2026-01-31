@@ -100,7 +100,7 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
 
     if (selectedAssignment) {
         return (
-            <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
+            <div className="h-screen overflow-y-auto bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
                 <header className="bg-slate-800/50 backdrop-blur border-b border-slate-700 sticky top-0 z-50">
                     <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
                         <button
@@ -152,26 +152,13 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
 
                         <DynamicFormRenderer
                             schema={selectedAssignment.inspection_form.schema}
+                            initialData={(selectedAssignment as any).latest_draft?.data || {}}
                             onSubmit={handleSubmitInspection}
+                            onSaveDraft={handleSaveDraft}
                             isSubmitting={isSubmitting}
                             submitLabel="Submit Inspection Report"
                             onLocationChange={setLocation}
                         />
-
-                        <button
-                            onClick={() => {
-                                const form = document.querySelector('form');
-                                if (form) {
-                                    const formData = new FormData(form);
-                                    const data: Record<string, any> = {};
-                                    formData.forEach((value, key) => { data[key] = value; });
-                                    handleSaveDraft(data);
-                                }
-                            }}
-                            className="w-full mt-4 py-3 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg transition-all"
-                        >
-                            Save as Draft
-                        </button>
                     </div>
                 </main>
             </div>
@@ -179,7 +166,7 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
     }
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
+        <div className="h-screen overflow-y-auto bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
             {/* Header */}
             <header className="bg-slate-800/50 backdrop-blur border-b border-slate-700 sticky top-0 z-50">
                 <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">

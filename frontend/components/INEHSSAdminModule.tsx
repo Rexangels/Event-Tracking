@@ -4,7 +4,8 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { FormTemplate, FormField } from '../services/inehssService';
+import { FormTemplate, FormField, acceptAssignment, submitInspection, completeAssignment } from '../services/inehssService';
+import Tooltip from './ui/Tooltip';
 
 interface HazardReportAdmin {
     id: string;
@@ -20,6 +21,7 @@ interface HazardReportAdmin {
 interface Officer {
     id: number;
     username: string;
+    email?: string;
 }
 
 const API_BASE = 'http://localhost:8000/api/v1';
@@ -36,7 +38,7 @@ interface OfficerAssignment {
 }
 
 const INEHSSAdminModule: React.FC = () => {
-    const [activeTab, setActiveTab] = useState<'forms' | 'reports' | 'assignments'>('forms');
+    const [activeTab, setActiveTab] = useState<'forms' | 'reports' | 'assignments' | 'officers'>('forms');
     const [forms, setForms] = useState<FormTemplate[]>([]);
     const [reports, setReports] = useState<HazardReportAdmin[]>([]);
     const [assignments, setAssignments] = useState<OfficerAssignment[]>([]);
@@ -55,6 +57,7 @@ const INEHSSAdminModule: React.FC = () => {
 
     // Assignment Modal State
     const [assignmentModalReport, setAssignmentModalReport] = useState<HazardReportAdmin | null>(null);
+    const [directAssignmentTemplate, setDirectAssignmentTemplate] = useState<FormTemplate | null>(null);
     const [selectedOfficer, setSelectedOfficer] = useState<string>('');
     const [selectedInspectionForm, setSelectedInspectionForm] = useState<string>('');
     const [assignmentNotes, setAssignmentNotes] = useState('');
@@ -195,36 +198,105 @@ const INEHSSAdminModule: React.FC = () => {
     // === Assignment ===
 
     const createAssignment = async () => {
-        if (!assignmentModalReport || !selectedOfficer || !selectedInspectionForm) {
+        const isDirect = !!directAssignmentTemplate;
+
+        if ((!isDirect && !assignmentModalReport) || !selectedOfficer || (isDirect ? false : !selectedInspectionForm)) {
             setError('Please select an officer and inspection form');
             return;
         }
 
         try {
+            let finalReportId = assignmentModalReport?.id;
+            let finalFormId = selectedInspectionForm;
+
+            // If direct assignment, create a placeholder report first
+            if (isDirect && directAssignmentTemplate) {
+                const reportRes = await fetch(`${API_BASE}/inehss/reports/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Token ${getToken()}`,
+                    },
+                    body: JSON.stringify({
+                        form_template: directAssignmentTemplate.id,
+                        data: { note: "Self-initiated inspection" },
+                        address: "Self-initiated",
+                        status: 'assigned',
+                        priority: 'medium'
+                    }),
+                });
+
+                if (!reportRes.ok) throw new Error('Failed to create placeholder report');
+                const reportData = await reportRes.json();
+                finalReportId = reportData.id;
+                finalFormId = directAssignmentTemplate.id;
+            }
+
+            if (!finalReportId) {
+                console.error("Critical Error: Missing Report ID", { isDirect, assignmentModalReport });
+                throw new Error('Could not determine report ID for assignment');
+            }
+
+            const payload = {
+                report: finalReportId,
+                officer: selectedOfficer,
+                inspection_form: finalFormId,
+                notes: assignmentNotes,
+            };
+
             const res = await fetch(`${API_BASE}/inehss/assignments/`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Token ${getToken()}`,
                 },
-                body: JSON.stringify({
-                    report: assignmentModalReport.id,
-                    officer: selectedOfficer,
-                    inspection_form: selectedInspectionForm,
-                    notes: assignmentNotes,
-                }),
+                body: JSON.stringify(payload),
             });
 
             if (!res.ok) throw new Error('Failed to create assignment');
 
             showSuccess('Assignment created!');
             setAssignmentModalReport(null);
+            setDirectAssignmentTemplate(null);
             setSelectedOfficer('');
             setSelectedInspectionForm('');
             setAssignmentNotes('');
             loadData();
         } catch (err) {
             setError('Failed to create assignment');
+        }
+    };
+
+    const createOfficer = async () => {
+        if (!newOfficerUsername || !newOfficerPassword) {
+            setError('Username and password are required');
+            return;
+        }
+
+        try {
+            const res = await fetch(`${API_BASE}/inehss/officers/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Token ${getToken()}`,
+                },
+                body: JSON.stringify({
+                    username: newOfficerUsername,
+                    email: newOfficerEmail,
+                    password: newOfficerPassword,
+                }),
+            });
+
+            if (!res.ok) throw new Error('Failed to create officer');
+
+            showSuccess('Officer created successfully!');
+            setIsOfficerModalOpen(false);
+            setNewOfficerUsername('');
+            setNewOfficerEmail('');
+            setNewOfficerPassword('');
+            loadData();
+        } catch (err) {
+            setError('Failed to create officer');
         }
     };
 
@@ -334,14 +406,31 @@ const INEHSSAdminModule: React.FC = () => {
                                                 <span className="text-xs text-slate-500">{form.schema?.length || 0} fields</span>
                                             </div>
                                         </div>
-                                        <button
-                                            onClick={() => openFormBuilder(form)}
-                                            className="p-2 hover:bg-slate-700 rounded-lg transition-colors"
-                                        >
-                                            <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                                            </svg>
-                                        </button>
+                                        <div className="flex gap-2">
+                                            {form.form_type === 'officer' && (
+                                                <Tooltip content="Assign this technical form directly to an officer.">
+                                                    <button
+                                                        onClick={() => {
+                                                            setDirectAssignmentTemplate(form);
+                                                            setSelectedInspectionForm(form.id);
+                                                        }}
+                                                        className="p-2 hover:bg-purple-500/20 text-purple-400 rounded-lg transition-colors border border-transparent hover:border-purple-500/30"
+                                                    >
+                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+                                                        </svg>
+                                                    </button>
+                                                </Tooltip>
+                                            )}
+                                            <button
+                                                onClick={() => openFormBuilder(form)}
+                                                className="p-2 hover:bg-slate-700 rounded-lg transition-colors"
+                                            >
+                                                <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                                </svg>
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             ))}
@@ -374,12 +463,17 @@ const INEHSSAdminModule: React.FC = () => {
                                                 </p>
                                             </div>
                                             {report.status === 'new' && (
-                                                <button
-                                                    onClick={() => setAssignmentModalReport(report)}
-                                                    className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs transition-all"
+                                                <Tooltip
+                                                    content="Pair this public hazard report with an officer and a specific technical inspection template to begin investigation."
+                                                    position="left"
                                                 >
-                                                    Assign
-                                                </button>
+                                                    <button
+                                                        onClick={() => setAssignmentModalReport(report)}
+                                                        className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs transition-all whitespace-nowrap"
+                                                    >
+                                                        Assign
+                                                    </button>
+                                                </Tooltip>
                                             )}
                                         </div>
                                     </div>
@@ -602,7 +696,14 @@ const INEHSSAdminModule: React.FC = () => {
                             </div>
 
                             <div>
-                                <label className="block text-xs text-slate-500 uppercase mb-1">Form Type</label>
+                                <label className="flex items-center gap-2 text-xs text-slate-500 uppercase mb-1">
+                                    Form Type
+                                    <Tooltip content="Public forms are visible on the public reporting portal. Officer forms are technical templates used for staff inspections.">
+                                        <svg className="w-3.5 h-3.5 text-slate-600 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                    </Tooltip>
+                                </label>
                                 <div className="flex gap-2">
                                     {(['public', 'officer'] as const).map(type => (
                                         <button
@@ -706,13 +807,18 @@ const INEHSSAdminModule: React.FC = () => {
             )}
 
             {/* Assignment Modal */}
-            {assignmentModalReport && (
+            {(assignmentModalReport || directAssignmentTemplate) && (
                 <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
                     <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md">
                         <div className="p-6 border-b border-slate-800">
-                            <h3 className="text-lg font-bold text-white">Assign Report</h3>
+                            <h3 className="text-lg font-bold text-white">
+                                {directAssignmentTemplate ? 'Direct Assignment' : 'Assign Report'}
+                            </h3>
                             <p className="text-sm text-slate-400 mt-1">
-                                Assign <span className="text-green-400">{assignmentModalReport.tracking_id}</span> to an officer
+                                {directAssignmentTemplate
+                                    ? `Assign ${directAssignmentTemplate.name} to an officer`
+                                    : `Assign ${assignmentModalReport?.tracking_id} to an officer`
+                                }
                             </p>
                         </div>
 
@@ -731,19 +837,21 @@ const INEHSSAdminModule: React.FC = () => {
                                 </select>
                             </div>
 
-                            <div>
-                                <label className="block text-xs text-slate-500 uppercase mb-1">Inspection Form</label>
-                                <select
-                                    value={selectedInspectionForm}
-                                    onChange={e => setSelectedInspectionForm(e.target.value)}
-                                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-white"
-                                >
-                                    <option value="">Select inspection form...</option>
-                                    {officerForms.map(form => (
-                                        <option key={form.id} value={form.id}>{form.name}</option>
-                                    ))}
-                                </select>
-                            </div>
+                            {!directAssignmentTemplate && (
+                                <div>
+                                    <label className="block text-xs text-slate-500 uppercase mb-1">Inspection Form</label>
+                                    <select
+                                        value={selectedInspectionForm}
+                                        onChange={e => setSelectedInspectionForm(e.target.value)}
+                                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-white"
+                                    >
+                                        <option value="">Select inspection form...</option>
+                                        {officerForms.map(form => (
+                                            <option key={form.id} value={form.id}>{form.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
 
                             <div>
                                 <label className="block text-xs text-slate-500 uppercase mb-1">Notes (Optional)</label>
@@ -758,7 +866,10 @@ const INEHSSAdminModule: React.FC = () => {
 
                         <div className="p-6 border-t border-slate-800 flex gap-3">
                             <button
-                                onClick={() => setAssignmentModalReport(null)}
+                                onClick={() => {
+                                    setAssignmentModalReport(null);
+                                    setDirectAssignmentTemplate(null);
+                                }}
                                 className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-lg transition-all"
                             >
                                 Cancel

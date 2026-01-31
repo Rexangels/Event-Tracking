@@ -122,8 +122,16 @@ const AdminDashboard: React.FC = () => {
             <header className="h-14 border-b border-slate-800 bg-slate-950 flex items-center justify-between px-6 shrink-0 relative z-50 shadow-lg">
                 <div className="flex items-center gap-4">
                     <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 bg-blue-600 rounded flex items-center justify-center font-bold text-white shadow-[0_0_15px_rgba(37,99,235,0.4)]">S</div>
-                        <h1 className="font-bold text-lg tracking-tight">SENTINEL <span className="text-blue-500 font-light">CORE</span></h1>
+                        <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 bg-blue-600 rounded flex items-center justify-center font-bold text-white shadow-[0_0_15px_rgba(37,99,235,0.4)]">
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                            </div>
+                            <h1 className="font-bold text-sm tracking-tight text-white/90">
+                                Integrated National Environmental Health Surveillance System
+                            </h1>
+                        </div>
                     </div>
                     <div className="h-6 w-[1px] bg-slate-800 mx-2"></div>
                     <nav className="flex gap-4">

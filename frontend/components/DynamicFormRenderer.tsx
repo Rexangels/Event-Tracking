@@ -6,6 +6,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { FormField } from '../services/inehssService';
+import LocationPicker from './LocationPicker';
 
 interface DynamicFormRendererProps {
     schema: FormField[];
@@ -15,6 +16,7 @@ interface DynamicFormRendererProps {
     submitLabel?: string;
     showGpsField?: boolean;
     onLocationChange?: (location: { latitude: number; longitude: number }) => void;
+    onSaveDraft?: (data: Record<string, any>) => void;
 }
 
 const DynamicFormRenderer: React.FC<DynamicFormRendererProps> = ({
@@ -24,10 +26,18 @@ const DynamicFormRenderer: React.FC<DynamicFormRendererProps> = ({
     isSubmitting = false,
     submitLabel = 'Submit Report',
     showGpsField = true,
-    onLocationChange
+    onLocationChange,
+    onSaveDraft
 }) => {
     const [formData, setFormData] = useState<Record<string, any>>(initialData);
     const [errors, setErrors] = useState<Record<string, string>>({});
+
+    // Sync formData with initialData when it changes (e.g., from a draft)
+    useEffect(() => {
+        if (initialData && Object.keys(initialData).length > 0) {
+            setFormData(initialData);
+        }
+    }, [initialData]);
     const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
     const [gettingLocation, setGettingLocation] = useState(false);
 
@@ -175,11 +185,40 @@ const DynamicFormRenderer: React.FC<DynamicFormRendererProps> = ({
 
             case 'file':
                 return (
-                    <input
-                        type="file"
-                        className={`${baseInputClass} ${errorClass} file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-green-600 file:text-white hover:file:bg-green-700`}
-                        onChange={(e) => handleChange(field.name, e.target.files?.[0])}
-                    />
+                    <div className="space-y-2">
+                        <div className="flex gap-2">
+                            <label className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 border rounded-lg cursor-pointer transition-all ${formData[field.name]
+                                ? 'bg-green-600/20 border-green-500 text-green-400'
+                                : 'bg-slate-800 border-slate-600 text-slate-400 hover:bg-slate-700'
+                                }`}>
+                                <input
+                                    type="file"
+                                    accept="image/*,video/*,application/pdf"
+                                    className="hidden"
+                                    onChange={(e) => handleChange(field.name, e.target.files?.[0])}
+                                />
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                                {formData[field.name] ? 'File Selected' : 'Upload File'}
+                            </label>
+                            <label className="flex-1 flex items-center justify-center gap-2 py-3 px-4 bg-slate-800 border border-slate-600 rounded-lg cursor-pointer hover:bg-slate-700 text-slate-400 transition-all">
+                                <input
+                                    type="file"
+                                    accept="image/*"
+                                    capture="environment"
+                                    className="hidden"
+                                    onChange={(e) => handleChange(field.name, e.target.files?.[0])}
+                                />
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                                Take Photo
+                            </label>
+                        </div>
+                        {formData[field.name] && (
+                            <div className="text-xs text-green-400 flex items-center gap-1">
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                {(formData[field.name] as File).name}
+                            </div>
+                        )}
+                    </div>
                 );
 
             default:
@@ -198,24 +237,19 @@ const DynamicFormRenderer: React.FC<DynamicFormRendererProps> = ({
     return (
         <form onSubmit={handleSubmit} className="space-y-6">
             {/* GPS Location Display */}
+            {/* GPS / Location Picker */}
             {showGpsField && (
-                <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-4">
-                    <div className="flex items-center gap-2 mb-2">
-                        <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                        </svg>
-                        <span className="text-sm font-medium text-slate-300">Location</span>
-                    </div>
-                    {gettingLocation ? (
-                        <p className="text-slate-400 text-sm">Detecting your location...</p>
-                    ) : location ? (
-                        <p className="text-green-400 text-sm font-mono">
-                            {location.latitude.toFixed(6)}, {location.longitude.toFixed(6)}
-                        </p>
-                    ) : (
-                        <p className="text-yellow-400 text-sm">Location not available. Please enable GPS.</p>
-                    )}
+                <div className="bg-slate-800/30 border border-slate-700 rounded-lg p-4 mb-6">
+                    <label className="block text-sm font-medium text-slate-300 mb-2">
+                        Incident Location <span className="text-red-400">*</span>
+                    </label>
+                    <LocationPicker
+                        initialLocation={location}
+                        onLocationSelect={(loc) => {
+                            setLocation(loc);
+                            onLocationChange?.(loc);
+                        }}
+                    />
                 </div>
             )}
 
@@ -256,6 +290,16 @@ const DynamicFormRenderer: React.FC<DynamicFormRendererProps> = ({
                     submitLabel
                 )}
             </button>
+
+            {onSaveDraft && (
+                <button
+                    type="button"
+                    onClick={() => onSaveDraft(formData)}
+                    className="w-full py-3 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg transition-all"
+                >
+                    Save as Draft
+                </button>
+            )}
         </form>
     );
 };

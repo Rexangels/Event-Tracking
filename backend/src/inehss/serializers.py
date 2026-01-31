@@ -82,17 +82,41 @@ class HazardReportSerializer(serializers.ModelSerializer):
 
 class OfficerAssignmentSerializer(serializers.ModelSerializer):
     """Serializer for officer assignments"""
-    report = HazardReportSerializer(read_only=True)
-    inspection_form = FormSchemaSerializer(read_only=True)
     officer_username = serializers.CharField(source='officer.username', read_only=True)
+    latest_draft = serializers.SerializerMethodField()
     
     class Meta:
         model = OfficerAssignment
         fields = [
-            'id', 'report', 'officer_username', 'inspection_form',
-            'status', 'notes', 'assigned_at', 'due_date', 'completed_at'
+            'id', 'report', 'officer', 'officer_username', 'inspection_form',
+            'status', 'notes', 'assigned_at', 'due_date', 'completed_at',
+            'latest_draft'
         ]
         read_only_fields = ['id', 'assigned_at', 'completed_at']
+
+    def to_representation(self, instance):
+        """Use nested serializers for the response representation"""
+        ret = super().to_representation(instance)
+        # Add detailed objects for the frontend to render properly
+        if instance.report:
+            ret['report'] = HazardReportSerializer(instance.report).data
+        if instance.inspection_form:
+            ret['inspection_form'] = FormSchemaSerializer(instance.inspection_form).data
+        return ret
+
+    def create(self, validated_data):
+        # Automatically set assigned_by to the current user (admin)
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            validated_data['assigned_by'] = request.user
+        return super().create(validated_data)
+
+    def get_latest_draft(self, obj):
+        # Only return draft if the most recent submission is a draft
+        last_submission = obj.submissions.order_by('-submitted_at').first()
+        if last_submission and last_submission.is_draft:
+            return FormSubmissionSerializer(last_submission).data
+        return None
 
 
 class FormSubmissionCreateSerializer(serializers.ModelSerializer):

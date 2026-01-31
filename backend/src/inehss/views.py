@@ -149,6 +149,14 @@ class HazardReportViewSet(viewsets.ModelViewSet):
                 'critical': EventSeverity.CRITICAL.value
             }
             
+            # Skip event creation for reports without location (e.g. self-initiated direct assignments)
+            if instance.latitude is None or instance.longitude is None:
+                print(f"Skipping event creation for report {instance.id} (No location data)")
+                return Response({
+                    'tracking_id': instance.tracking_id,
+                    'message': 'Report created. Event generation pending location data.'
+                }, status=status.HTTP_201_CREATED)
+
             # Create the event
             event = EventModel.objects.create(
                 title=f"{instance.form_template.name} - {instance.tracking_id}",
@@ -171,6 +179,7 @@ class HazardReportViewSet(viewsets.ModelViewSet):
             
         # Return the tracking ID to the user
         return Response({
+            'id': str(instance.id),
             'tracking_id': instance.tracking_id,
             'message': 'Report submitted successfully. Save your tracking ID for follow-up.'
         }, status=status.HTTP_201_CREATED)
@@ -203,6 +212,16 @@ class OfficerAssignmentViewSet(viewsets.ModelViewSet):
         if user.is_staff:
             return OfficerAssignment.objects.all()
         return OfficerAssignment.objects.filter(officer=user)
+
+    def create(self, request, *args, **kwargs):
+        print("DEBUG: Creating assignment payload:", request.data)
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            print("DEBUG: Assignment Validation Errors:", serializer.errors)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
     
     @action(detail=True, methods=['post'])
     def accept(self, request, pk=None):
@@ -262,6 +281,59 @@ class FormSubmissionViewSet(viewsets.ModelViewSet):
             return Response({'error': 'Assignment not found'}, status=status.HTTP_404_NOT_FOUND)
         
         return super().create(request, *args, **kwargs)
+
+    def perform_create(self, serializer):
+        submission = serializer.save()
+        
+        # Propagate location to the main report and event
+        if submission.latitude and submission.longitude:
+            try:
+                assignment = submission.assignment
+                report = assignment.report
+                
+                # Update Report Location
+                report.latitude = submission.latitude
+                report.longitude = submission.longitude
+                report.save()
+                
+                # Update or Create Event
+                from infrastructure.models import EventModel
+                from domain.entities import EventSeverity, EventStatus
+                
+                # Check for existing event
+                if hasattr(report, 'event') and report.event:
+                    event = report.event
+                    event.latitude = submission.latitude
+                    event.longitude = submission.longitude
+                    event.save()
+                    print(f"Updated event location for report {report.tracking_id}")
+                else:
+                    # Create new event if missing
+                    print(f"Auto-creating missing event for report {report.tracking_id}")
+                    
+                    # Map priority/severity
+                    severity_map = {
+                        'low': EventSeverity.LOW.value,
+                        'medium': EventSeverity.MEDIUM.value,
+                        'high': EventSeverity.HIGH.value,
+                        'critical': EventSeverity.CRITICAL.value
+                    }
+                    
+                    event = EventModel.objects.create(
+                        title=f"{report.form_template.name} - {report.tracking_id}",
+                        description=f"Officer Report Submitted.\n\nType: {report.form_template.name}\nTracking ID: {report.tracking_id}\nAddress: {report.address}",
+                        category=report.form_template.event_category,
+                        severity=severity_map.get(report.priority, EventSeverity.MEDIUM.value),
+                        status=EventStatus.VERIFIED.value, # Officer submitted, so it's verified
+                        latitude=submission.latitude,
+                        longitude=submission.longitude,
+                        trust_score=1.0 
+                    )
+                    report.event = event
+                    report.save()
+
+            except Exception as e:
+                print(f"Error propagating location data: {e}")
 
 
 class MediaAttachmentViewSet(viewsets.ModelViewSet):

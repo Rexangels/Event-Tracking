@@ -1,8 +1,9 @@
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import * as d3 from 'd3';
-import { IntelligenceEvent } from '../types';
+import { IntelligenceEvent, EventSeverity } from '../types';
 import { MAP_COLORS, EVENT_ICONS, getClusterColor } from '../constants';
+import LeafletDetailLayer from './LeafletDetailLayer';
 
 interface MapVisualizerProps {
   events: IntelligenceEvent[];
@@ -27,13 +28,18 @@ const MapVisualizer: React.FC<MapVisualizerProps> = ({
   onRegionSelect
 }) => {
   const svgRef = useRef<SVGSVGElement>(null);
-  const gRef = useRef<d3.Selection<SVGGElement, unknown, null, undefined>>();
-  const zoomRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown>>();
-  const projectionRef = useRef<d3.GeoProjection>();
+  const gRef = useRef<d3.Selection<SVGGElement, unknown, null, undefined> | null>(null);
+  const zoomRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
+  const projectionRef = useRef<d3.GeoProjection | null>(null);
   const currentZoomRef = useRef(1);
 
   const [showHeatmap, setShowHeatmap] = useState(false);
   const [zoomDisplay, setZoomDisplay] = useState(1); // Only for UI display
+
+  // Hybrid Map State
+  const [viewMode, setViewMode] = useState<'VECTOR' | 'DETAIL'>('VECTOR');
+  const [leafletCenter, setLeafletCenter] = useState<[number, number]>([9.0820, 8.6753]); // Default Nigeria
+  const [leafletZoom, setLeafletZoom] = useState(6);
 
   // Cache for subregions to prevent flickering/re-fetching
   const subregionCache = useRef<Record<string, any>>({});
@@ -298,6 +304,27 @@ const MapVisualizer: React.FC<MapVisualizerProps> = ({
       .on('end', (event) => {
         // Force immediate full quality render when zoom stops
         updateEventsLayer(event.transform.k, event.transform, true);
+
+        // HYBRID SWITCH LOGIC
+        // If zoomed in significantly (> 8x), switch to Leaflet Mode
+        if (event.transform.k > 6) { // Threshold 6 for earlier switch
+          // Calculate center
+          // Invert the center pixel [width/2, height/2] to get Lat/Lng
+          if (projectionRef.current) {
+            const center = projectionRef.current.invert?.([width / 2, height / 2]); // Apply reverse transform logic strictly if needed, but D3 handles transform separate from projection mostly
+            // Actually, simpler: The transform applies to the G element.
+            // To get the map center, we need to invert the transform, then invert the projection.
+            // transform.invert([w/2, h/2]) gives raw projected [x,y].
+            const [tx, ty] = d3.zoomIdentity.translate(event.transform.x, event.transform.y).scale(event.transform.k).invert([width / 2, height / 2]);
+            const geo = projectionRef.current.invert!([tx, ty]);
+
+            if (geo) {
+              setLeafletCenter([geo[1], geo[0]]); // Lat, Lng
+              setLeafletZoom(Math.floor(event.transform.k) + 1); // Fix: Scale + 1 prevents "deep zoom"
+              setViewMode('DETAIL');
+            }
+          }
+        }
       });
 
     zoomRef.current = zoom;
@@ -365,9 +392,9 @@ const MapVisualizer: React.FC<MapVisualizerProps> = ({
       events.forEach(e => {
         const [x, y] = projection([e.coords.lng, e.coords.lat])!;
         let weight = 1;
-        if (e.severity === 'critical') weight = 5;
-        else if (e.severity === 'high') weight = 3;
-        else if (e.severity === 'medium') weight = 2;
+        if (e.severity === EventSeverity.CRITICAL) weight = 5;
+        else if (e.severity === EventSeverity.HIGH) weight = 3;
+        else if (e.severity === EventSeverity.MEDIUM) weight = 2;
 
         for (let i = 0; i < weight; i++) {
           weightedEvents.push({ x, y });
@@ -616,8 +643,32 @@ const MapVisualizer: React.FC<MapVisualizerProps> = ({
       <svg
         ref={svgRef}
         viewBox="0 0 1000 600"
-        className="w-full h-full touch-none select-none outline-none"
+        className={`w-full h-full touch-none select-none outline-none ${viewMode === 'DETAIL' ? 'opacity-0 pointer-events-none absolute' : 'opacity-100'}`}
       />
+
+      {/* Leaflet Layer (Overlay) */}
+      {viewMode === 'DETAIL' && (
+        <div className="absolute inset-0 z-20 animate-in fade-in duration-700">
+          <LeafletDetailLayer
+            events={events}
+            center={leafletCenter}
+            zoom={leafletZoom}
+            onEventClick={onEventClick}
+          />
+          <button
+            onClick={() => {
+              setViewMode('VECTOR');
+              // Reset D3 zoom slightly to avoid immediate re-trigger
+              if (svgRef.current && zoomRef.current) {
+                d3.select(svgRef.current).transition().duration(500).call(zoomRef.current.scaleTo, 4);
+              }
+            }}
+            className="absolute top-4 left-1/2 -translate-x-1/2 bg-slate-900/90 border border-slate-700 text-white px-4 py-2 rounded-full shadow-xl text-xs font-bold uppercase tracking-widest hover:bg-slate-800 transition-all z-[1000]"
+          >
+            Return to Vector Map
+          </button>
+        </div>
+      )}
 
       {/* Legend */}
       <div className="absolute bottom-4 right-4 z-10 flex flex-col gap-1.5">
