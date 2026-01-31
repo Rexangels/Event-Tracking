@@ -34,6 +34,7 @@ const mapCategoryToType = (category: string): EventType => {
         case 'API_FEED': return EventType.API_FEED;
         case 'GEOPOLITICAL': return EventType.GEOPOLITICAL;
         case 'ENVIRONMENTAL': return EventType.ENVIRONMENTAL;
+        case 'ENVIRONMENTAL_HAZARD': return EventType.ENVIRONMENTAL;
         default: return EventType.HUMAN_REPORT;
     }
 };

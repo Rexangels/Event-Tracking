@@ -13,6 +13,7 @@ import RegionIntelligencePanel from '../components/RegionIntelligencePanel';
 import AnalystModule from '../components/AnalystModule';
 import MissionControl from '../components/MissionControl';
 import GovernanceModule from '../components/GovernanceModule';
+import INEHSSAdminModule from '../components/INEHSSAdminModule';
 import EventDetailPanel from '../components/EventDetailPanel';
 import Tooltip from '../components/ui/Tooltip';
 import { ExportFile } from '../services/ExportService';
@@ -83,7 +84,7 @@ const AdminDashboard: React.FC = () => {
     }, []);
 
     const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
-    const [activeModule, setActiveModule] = useState<'VISUALIZATION' | 'ANALYST' | 'GOVERNANCE'>('VISUALIZATION');
+    const [activeModule, setActiveModule] = useState<'VISUALIZATION' | 'ANALYST' | 'GOVERNANCE' | 'INEHSS'>('VISUALIZATION');
 
     const selectedEvent = useMemo(() =>
         events.find(e => e.id === selectedEventId) || null
@@ -126,13 +127,14 @@ const AdminDashboard: React.FC = () => {
                     </div>
                     <div className="h-6 w-[1px] bg-slate-800 mx-2"></div>
                     <nav className="flex gap-4">
-                        {['VISUALIZATION', 'ANALYST', 'GOVERNANCE'].map((tab) => (
+                        {['VISUALIZATION', 'ANALYST', 'GOVERNANCE', 'INEHSS'].map((tab) => (
                             <Tooltip
                                 key={tab}
                                 content={
                                     tab === 'VISUALIZATION' ? 'Real-time geographical tracking and spatial distribution.' :
                                         tab === 'ANALYST' ? 'Deep data mining and automated pattern recognition.' :
-                                            'Incident management protocols and administrative controls.'
+                                            tab === 'GOVERNANCE' ? 'Incident management protocols and administrative controls.' :
+                                                'Environmental Health Surveillance - Forms & Assignments.'
                                 }
                             >
                                 <button
@@ -234,6 +236,10 @@ const AdminDashboard: React.FC = () => {
 
                         {activeModule === 'GOVERNANCE' && (
                             <GovernanceModule />
+                        )}
+
+                        {activeModule === 'INEHSS' && (
+                            <INEHSSAdminModule />
                         )}
 
                     </section>

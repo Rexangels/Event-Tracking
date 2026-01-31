@@ -46,6 +46,9 @@ const MapVisualizer: React.FC<MapVisualizerProps> = ({
   const CLUSTER_ZOOM_THRESHOLD = 4;
   const CLUSTER_RADIUS = 50;
 
+  // Debounce ref
+  const updateTimeoutRef = useRef<NodeJS.Timeout>(null);
+
   // Stable clustering function using Quadtree for high performance
   const computeClusters = useCallback((
     projectedEvents: Array<{ event: IntelligenceEvent; x: number; y: number }>,
@@ -102,139 +105,153 @@ const MapVisualizer: React.FC<MapVisualizerProps> = ({
   }, []);
 
   // Update events layer (called on zoom and data change)
-  const updateEventsLayer = useCallback((zoomLevel: number, transform?: d3.ZoomTransform) => {
+  const updateEventsLayer = useCallback((zoomLevel: number, transform?: d3.ZoomTransform, immediate = false) => {
     if (!gRef.current || !projectionRef.current) return;
 
-    const eventsLayer = gRef.current.select('.events-layer');
-    eventsLayer.selectAll('*').remove();
-
-    const projection = projectionRef.current;
-    const projectedEvents = events.map(event => {
-      const [x, y] = projection([event.coords.lng, event.coords.lat])!;
-      return { event, x, y };
-    });
-
-    // Pulse animation
-    const pulse = (selection: d3.Selection<SVGCircleElement, any, SVGGElement, unknown>) => {
-      selection
-        .attr('r', 0)
-        .attr('opacity', 0.8)
-        .transition()
-        .duration(2000)
-        .ease(d3.easeLinear)
-        .attr('r', 25)
-        .attr('opacity', 0)
-        .on('end', function () {
-          d3.select(this).call(pulse as any);
-        });
-    };
-
-    // Use the provided zoomLevel (k) for scaling to keep icons pinpoint
-    const k = zoomLevel;
-
-    // Render individual events
-    const renderEvents = (eventData: typeof projectedEvents) => {
-      const eventGroups = eventsLayer.selectAll('.event-group')
-        .data(eventData, (d: any) => d.event.id)
-        .enter()
-        .append('g')
-        .attr('class', 'event-group')
-        .attr('transform', d => `translate(${d.x}, ${d.y})`)
-        .style('cursor', 'pointer')
-        .on('click', (event, d) => {
-          event.stopPropagation();
-          onEventClick(d.event);
-        });
-
-      // Animated pings
-      eventGroups.append('circle')
-        .attr('class', 'event-ping')
-        .attr('cx', 0)
-        .attr('cy', 0)
-        .attr('fill', 'none')
-        .attr('stroke', d => MAP_COLORS[d.event.severity])
-        .attr('stroke-width', 1 / k)
-        .call(pulse as any);
-
-      // Icon markers
-      eventGroups.append('g')
-        .attr('class', 'event-marker')
-        .attr('transform', `scale(${1.2 / k})`)
-        .each(function (d) {
-          const g = d3.select(this);
-          const isSelected = d.event.id === selectedEventId;
-          const color = MAP_COLORS[d.event.severity];
-          const iconPath = EVENT_ICONS[d.event.type]?.path || EVENT_ICONS.HUMAN_REPORT.path;
-
-          g.append('circle')
-            .attr('r', isSelected ? 14 : 10)
-            .attr('fill', color)
-            .attr('stroke', '#fff')
-            .attr('stroke-width', isSelected ? 2 : 1)
-            .style('filter', `drop-shadow(0 0 4px ${color})`);
-
-          g.append('path')
-            .attr('d', iconPath)
-            .attr('fill', '#fff')
-            .attr('transform', 'translate(-12, -12) scale(1)')
-            .style('pointer-events', 'none');
-        });
-
-      eventGroups.append('title')
-        .text(d => `${d.event.title}\nSeverity: ${d.event.severity}\nType: ${d.event.type}`);
-    };
-
-    // Render clusters
-    const renderClusters = (clusters: Cluster[]) => {
-      const clusterGroups = eventsLayer.selectAll('.cluster-group')
-        .data(clusters)
-        .enter()
-        .append('g')
-        .attr('class', 'cluster-group')
-        .attr('transform', d => `translate(${d.x}, ${d.y})`)
-        .style('cursor', 'pointer')
-        .on('click', (event, d) => {
-          event.stopPropagation();
-          if (zoomRef.current && svgRef.current) {
-            d3.select(svgRef.current)
-              .transition()
-              .duration(750)
-              .call(
-                zoomRef.current.transform as any,
-                d3.zoomIdentity.translate(width / 2, height / 2).scale(6).translate(-d.x, -d.y)
-              );
-          }
-        });
-
-      clusterGroups.append('circle')
-        .attr('class', 'cluster-circle')
-        .attr('r', d => (15 + Math.log(d.count) * 5) / k)
-        .attr('fill', d => getClusterColor(d.count))
-        .attr('stroke', '#fff')
-        .attr('stroke-width', 2 / k)
-        .attr('opacity', 0.9)
-        .style('filter', d => `drop-shadow(0 0 8px ${getClusterColor(d.count)})`);
-
-      clusterGroups.append('text')
-        .attr('class', 'cluster-text')
-        .attr('text-anchor', 'middle')
-        .attr('dy', '0.35em')
-        .attr('fill', '#fff')
-        .attr('font-size', `${11 / k}px`)
-        .attr('font-weight', 'bold')
-        .text(d => {
-          if (d.count >= 1000) return `${(d.count / 1000).toFixed(1)}k`;
-          return d.count > 99 ? '99+' : d.count;
-        });
-    };
-
-    const clusterResult = computeClusters(projectedEvents, zoomLevel);
-    if (clusterResult) {
-      renderClusters(clusterResult.clusters);
-      renderEvents(clusterResult.unclustered);
-    } else {
-      renderEvents(projectedEvents);
+    if (updateTimeoutRef.current && !immediate) {
+      clearTimeout(updateTimeoutRef.current);
     }
+
+    const render = () => {
+      const eventsLayer = gRef.current!.select('.events-layer');
+      eventsLayer.selectAll('*').remove();
+
+      const projection = projectionRef.current!;
+      const projectedEvents = events.map(event => {
+        const [x, y] = projection([event.coords.lng, event.coords.lat])!;
+        return { event, x, y };
+      });
+
+      // Pulse animation
+      const pulse = (selection: d3.Selection<SVGCircleElement, any, SVGGElement, unknown>) => {
+        selection
+          .attr('r', 0)
+          .attr('opacity', 0.8)
+          .transition()
+          .duration(2000)
+          .ease(d3.easeLinear)
+          .attr('r', 25)
+          .attr('opacity', 0)
+          .on('end', function () {
+            d3.select(this).call(pulse as any);
+          });
+      };
+
+      // Use the provided zoomLevel (k) for scaling to keep icons pinpoint
+      const k = zoomLevel;
+
+      // Render individual events
+      const renderEvents = (eventData: typeof projectedEvents) => {
+        const eventGroups = eventsLayer.selectAll('.event-group')
+          .data(eventData, (d: any) => d.event.id)
+          .enter()
+          .append('g')
+          .attr('class', 'event-group')
+          .attr('transform', d => `translate(${d.x}, ${d.y})`)
+          .style('cursor', 'pointer')
+          .on('click', (event, d) => {
+            event.stopPropagation();
+            onEventClick(d.event);
+          });
+
+        // Animated pings
+        eventGroups.append('circle')
+          .attr('class', 'event-ping')
+          .attr('cx', 0)
+          .attr('cy', 0)
+          .attr('fill', 'none')
+          .attr('stroke', d => MAP_COLORS[d.event.severity])
+          .attr('stroke-width', 1 / k)
+          .call(pulse as any);
+
+        // Icon markers
+        eventGroups.append('g')
+          .attr('class', 'event-marker')
+          .attr('transform', `scale(${1.2 / k})`)
+          .each(function (d) {
+            const g = d3.select(this);
+            const isSelected = d.event.id === selectedEventId;
+            const color = MAP_COLORS[d.event.severity];
+            const iconPath = EVENT_ICONS[d.event.type]?.path || EVENT_ICONS.HUMAN_REPORT.path;
+
+            g.append('circle')
+              .attr('r', isSelected ? 14 : 10)
+              .attr('fill', color)
+              .attr('stroke', '#fff')
+              .attr('stroke-width', isSelected ? 2 : 1)
+              .style('filter', `drop-shadow(0 0 4px ${color})`);
+
+            g.append('path')
+              .attr('d', iconPath)
+              .attr('fill', '#fff')
+              .attr('transform', 'translate(-12, -12) scale(1)')
+              .style('pointer-events', 'none');
+          });
+
+        eventGroups.append('title')
+          .text(d => `${d.event.title}\nSeverity: ${d.event.severity}\nType: ${d.event.type}`);
+      };
+
+      // Render clusters
+      const renderClusters = (clusters: Cluster[]) => {
+        const clusterGroups = eventsLayer.selectAll('.cluster-group')
+          .data(clusters)
+          .enter()
+          .append('g')
+          .attr('class', 'cluster-group')
+          .attr('transform', d => `translate(${d.x}, ${d.y})`)
+          .style('cursor', 'pointer')
+          .on('click', (event, d) => {
+            event.stopPropagation();
+            if (zoomRef.current && svgRef.current) {
+              d3.select(svgRef.current)
+                .transition()
+                .duration(750)
+                .call(
+                  zoomRef.current.transform as any,
+                  d3.zoomIdentity.translate(width / 2, height / 2).scale(6).translate(-d.x, -d.y)
+                );
+            }
+          });
+
+        clusterGroups.append('circle')
+          .attr('class', 'cluster-circle')
+          .attr('r', d => (15 + Math.log(d.count) * 5) / k)
+          .attr('fill', d => getClusterColor(d.count))
+          .attr('stroke', '#fff')
+          .attr('stroke-width', 2 / k)
+          .attr('opacity', 0.9)
+          .style('filter', d => `drop-shadow(0 0 8px ${getClusterColor(d.count)})`);
+
+        clusterGroups.append('text')
+          .attr('class', 'cluster-text')
+          .attr('text-anchor', 'middle')
+          .attr('dy', '0.35em')
+          .attr('fill', '#fff')
+          .attr('font-size', `${11 / k}px`)
+          .attr('font-weight', 'bold')
+          .text(d => {
+            if (d.count >= 1000) return `${(d.count / 1000).toFixed(1)}k`;
+            return d.count > 99 ? '99+' : d.count;
+          });
+      };
+
+      const clusterResult = computeClusters(projectedEvents, zoomLevel);
+      if (clusterResult) {
+        renderClusters(clusterResult.clusters);
+        renderEvents(clusterResult.unclustered);
+      } else {
+        renderEvents(projectedEvents);
+      }
+    };
+
+    if (immediate) {
+      render();
+    } else {
+      // Debounce heavily during zoom
+      updateTimeoutRef.current = setTimeout(render, 300);
+    }
+
   }, [events, selectedEventId, onEventClick, computeClusters]);
 
   // Initialize Map (Static Layers & Zoom) - Runs Once
@@ -265,7 +282,7 @@ const MapVisualizer: React.FC<MapVisualizerProps> = ({
         currentZoomRef.current = k;
         setZoomDisplay(k);
 
-        // Update regions stroke
+        // Update regions stroke - Lightweight updates only!
         g.selectAll('.region').attr('stroke-width', 0.5 / Math.sqrt(k));
         g.selectAll('.subregion').attr('stroke-width', 0.2 / k);
 
@@ -274,8 +291,13 @@ const MapVisualizer: React.FC<MapVisualizerProps> = ({
           .attr('font-size', 6 / Math.sqrt(k))
           .attr('opacity', k > 8 ? 0 : 1);
 
-        // Trigger dynamic layer updates
-        updateEventsLayer(k, event.transform);
+        // Hide events layer during rapid zooming if needed, or just let it scale
+        // For best performance, we delay the re-clustering
+        updateEventsLayer(k, event.transform, false);
+      })
+      .on('end', (event) => {
+        // Force immediate full quality render when zoom stops
+        updateEventsLayer(event.transform.k, event.transform, true);
       });
 
     zoomRef.current = zoom;
@@ -326,8 +348,8 @@ const MapVisualizer: React.FC<MapVisualizerProps> = ({
   useEffect(() => {
     if (!gRef.current || !projectionRef.current) return;
 
-    // Update Events
-    updateEventsLayer(currentZoomRef.current);
+    // Update Events - Immediate on data change
+    updateEventsLayer(currentZoomRef.current, undefined, true);
 
     // Update Heatmap (Recalculate on data OR significant zoom change)
     const heatmapLayer = gRef.current.select('.heatmap-layer');
@@ -506,7 +528,7 @@ const MapVisualizer: React.FC<MapVisualizerProps> = ({
       }
     } else if (selectedRegion === 'Nigeria') {
       if (lastLoadedRegion.current !== 'Nigeria') {
-        loadSubregions('/nigeria.json', 'Nigeria');
+        loadSubregions('/nigeria_optimized.json', 'Nigeria'); // Use optimized file
         lastLoadedRegion.current = 'Nigeria';
       }
     } else if (selectedRegion) {

@@ -46,5 +46,13 @@ export const authService = {
 
     isAuthenticated(): boolean {
         return !!localStorage.getItem('authToken');
+    },
+
+    getToken(): string | null {
+        return localStorage.getItem('authToken');
+    },
+
+    getUser(): User | null {
+        return this.getCurrentUser();
     }
 };

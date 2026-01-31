@@ -1,0 +1,70 @@
+NESREA Hazardous Chemical Site & Event Surveillance Form
+Section 1: Administrative & Geographic Information
+This section identifies the reporting officer and site location for integration with GIS mapping 
+1. Reporting Agency/Officer: [Name and Designation]
+2. Date of Report: [DD/MM/YYYY]
+3. State: [Drop-down list of 36 States + FCT]
+4. Local Government Area (LGA): [Short Answer]
+5. Site Name/Facility Name: [Short Answer]
+6. Site Coordinates: (Latitude/Longitude)
+7. Facility Type:
+    ? ( ) Industrial Manufacturing
+    ? ( ) Chemical Storage/Warehouse
+    ? ( ) Distribution/Retail Hub
+    ? ( ) Informal/Small-scale Workshop
+Section 2: Site Characteristics (Driving Force & Pressure)
+This identifies the "Driving Forces" (industrialisation) and "Pressures" (chemical presence) that could lead to environmental stress.
+8. Priority Chemicals Handled (Select all that apply):
+    ? [ ] Highly Hazardous Pesticides (HHPs)
+    ? [ ] Lead or Lead-containing compounds
+    ? [ ] Mercury or Mercury-based products
+    ? [ ] Benzene/Industrial Solvents
+    ? [ ] Asbestos
+    ? [ ] Cadmium/Heavy Metals
+    ? [ ] Other: [Text Box]
+9. Current Management Status:
+    ? ( ) Permitted and Regulated by NESREA 
+    ? ( ) Non-compliant licensed sites
+    ? ( ) Unregulated Site
+    ? ( ) Abandoned/Legacy Site
+Section 3: Chemical Event Description (Pressure & State)
+Captures details of unusual environmental events for Event-Based Surveillance (EBS).
+10. Nature of the Chemical Event:
+    ? ( ) Chemical Spill/Leakage
+    ? ( ) Tanker Accident (Involving hazardous materials)
+    ? ( ) Fire or Explosion
+    ? ( ) Unusual Fumes or Odours detected by the community
+11. Impact on Environmental State (Measured or Observed):
+    ? [ ] Visible soil contamination
+    ? [ ] Chemical runoff into nearby water bodies (State change)
+    ? [ ] Visible air pollution (Smoke/plumes)
+    ? [ ] Sudden fish kills or mass bird deaths in the vicinity
+Section 4: Exposure & Vulnerable Populations (Exposure)
+Identifies who is in contact with the hazard and the pathway of exposure.
+12. Target Populations at Risk (Select all that apply):
+    ? [ ] Facility Workers (Occupational exposure)
+    ? [ ] Children (Under-5s or nearby school children)
+    ? [ ] Pregnant women
+    ? [ ] Residential communities within 500m of the site
+13. Primary Exposure Pathway (Suspected):
+    ? ( ) Inhalation (Vapours/Dust)
+    ? ( ) Ingestion (Water/Food chain contamination)
+    ? ( ) Dermal (Skin contact)
+Section 5: Reported Health Outcomes (Effect)
+Captures acute signals of health impacts in the community.
+14. Are there clusters of symptoms in the nearby population?
+    ? [ ] Sudden respiratory distress/coughing clusters
+    ? [ ] Skin rashes or chemical burns
+    ? [ ] Unexplained cluster of neurological or gastrointestinal issues
+    ? [ ] Community rumours of unusual illnesses
+Section 6: Actions Taken & Enforcement (Action)
+Logs policy and regulatory responses to mitigate the hazard.
+15. Immediate Response Actions:
+    ? ( ) Site evacuation or cordon established
+    ? ( ) Environmental sampling initiated (Soil/Water/Air)
+    ? ( ) Public health warnings/Alerts issued
+16. Regulatory/Enforcement Action Taken:
+    ? ( ) NESREA Violation Notice issued
+    ? ( ) Site closure/Seal-off
+    ? ( ) Remediation order given
+

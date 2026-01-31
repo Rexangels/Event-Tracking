@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { authService } from '../services/authService';
 
 const LoginPage: React.FC = () => {
@@ -9,6 +9,10 @@ const LoginPage: React.FC = () => {
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const navigate = useNavigate();
+    const location = useLocation();
+
+    // Get redirect path from state or default to admin
+    const from = (location.state as { from?: string })?.from || '/admin';
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -17,7 +21,7 @@ const LoginPage: React.FC = () => {
 
         try {
             await authService.login(username, password);
-            navigate('/admin');
+            navigate(from, { replace: true });
         } catch (err) {
             setError('Invalid credentials. Please try again.');
         } finally {
