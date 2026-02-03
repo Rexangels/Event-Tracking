@@ -78,25 +78,36 @@ const INEHSSAdminModule: React.FC = () => {
     const loadData = async () => {
         setIsLoading(true);
         try {
-            const headers = { Authorization: `Token ${getToken()}` };
+            const token = getToken();
+            if (!token) {
+                setError('Authentication required. Please log in.');
+                setIsLoading(false);
+                return;
+            }
+
+            const headers = { Authorization: `Bearer ${token}` };
 
             // Load forms
             const formsRes = await fetch(`${API_BASE}/inehss/forms/`, { headers });
+            if (!formsRes.ok) console.error('Forms error:', formsRes.status);
             const formsData = await formsRes.json();
             setForms(formsData.results || formsData);
 
             // Load reports
             const reportsRes = await fetch(`${API_BASE}/inehss/reports/`, { headers });
+            if (!reportsRes.ok) console.error('Reports error:', reportsRes.status);
             const reportsData = await reportsRes.json();
             setReports(reportsData.results || reportsData);
 
             // Load officers (staff users)
             const officersRes = await fetch(`${API_BASE}/inehss/officers/`, { headers });
+            if (!officersRes.ok) console.error('Officers error:', officersRes.status);
             const officersData = await officersRes.json();
             setOfficers(officersData || []);
 
             // Load assignments
             const assignmentsRes = await fetch(`${API_BASE}/inehss/assignments/`, { headers });
+            if (!assignmentsRes.ok) console.error('Assignments error:', assignmentsRes.status);
             if (assignmentsRes.ok) {
                 const assignmentsData = await assignmentsRes.json();
                 setAssignments(assignmentsData.results || assignmentsData || []);
@@ -159,7 +170,7 @@ const INEHSSAdminModule: React.FC = () => {
                 method,
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Token ${getToken()}`,
+                    'Authorization': `Bearer ${getToken()}`,
                 },
                 body: JSON.stringify(payload),
             });
@@ -227,7 +238,7 @@ const INEHSSAdminModule: React.FC = () => {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'Authorization': `Token ${getToken()}`,
+                        'Authorization': `Bearer ${getToken()}`,
                     },
                     body: JSON.stringify({
                         form_template: directAssignmentTemplate.id,
@@ -260,7 +271,7 @@ const INEHSSAdminModule: React.FC = () => {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Token ${getToken()}`,
+                    'Authorization': `Bearer ${getToken()}`,
                 },
                 body: JSON.stringify(payload),
             });
@@ -292,7 +303,7 @@ const INEHSSAdminModule: React.FC = () => {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Token ${getToken()}`,
+                    'Authorization': `Bearer ${getToken()}`,
                 },
                 body: JSON.stringify({
                     username: newOfficerUsername,

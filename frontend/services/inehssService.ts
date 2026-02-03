@@ -102,14 +102,14 @@ export async function trackReport(trackingId: string): Promise<{
 
 export async function getMyAssignments(token: string): Promise<OfficerAssignment[]> {
     const response = await axios.get(`${API_BASE}/assignments/`, {
-        headers: { Authorization: `Token ${token}` }
+        headers: { Authorization: `Bearer ${token}` }
     });
     return response.data;
 }
 
 export async function acceptAssignment(assignmentId: string, token: string): Promise<void> {
     await axios.post(`${API_BASE}/assignments/${assignmentId}/accept/`, {}, {
-        headers: { Authorization: `Token ${token}` }
+        headers: { Authorization: `Bearer ${token}` }
     });
 }
 
@@ -128,14 +128,14 @@ export async function submitInspection(
         is_draft: isDraft,
     };
     const response = await axios.post(`${API_BASE}/submissions/`, payload, {
-        headers: { Authorization: `Token ${token}` }
+        headers: { Authorization: `Bearer ${token}` }
     });
     return response.data;
 }
 
 export async function completeAssignment(assignmentId: string, token: string): Promise<void> {
     await axios.post(`${API_BASE}/assignments/${assignmentId}/complete/`, {}, {
-        headers: { Authorization: `Token ${token}` }
+        headers: { Authorization: `Bearer ${token}` }
     });
 }
 
@@ -163,7 +163,7 @@ export async function uploadAttachment(
 
     const headers: Record<string, string> = {};
     if (token) {
-        headers['Authorization'] = `Token ${token}`;
+        headers['Authorization'] = `Bearer ${token}`;
     }
 
     const response = await axios.post(`${API_BASE}/attachments/`, formData, { headers });

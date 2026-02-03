@@ -9,24 +9,16 @@ export interface User {
 }
 
 export interface LoginResponse {
-    token: string;
-    user_id: number;
-    email: string;
-    username: string;
-    is_staff: boolean;
+    access: string;
+    refresh: string;
 }
 
 export const authService = {
     async login(username: string, password: string): Promise<LoginResponse> {
         const response = await api.post<LoginResponse>('/auth/login/', { username, password });
-        if (response.data.token) {
-            localStorage.setItem('authToken', response.data.token);
-            localStorage.setItem('user', JSON.stringify({
-                id: response.data.user_id,
-                username: response.data.username,
-                email: response.data.email,
-                is_staff: response.data.is_staff
-            }));
+        if (response.data.access) {
+            localStorage.setItem('authToken', response.data.access);
+            localStorage.setItem('refreshToken', response.data.refresh);
         }
         return response.data;
     },

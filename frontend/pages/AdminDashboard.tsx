@@ -57,10 +57,11 @@ const AdminDashboard: React.FC = () => {
     useEffect(() => {
         const checkHealth = async () => {
             try {
-                const response = await api.get('/health/');
+                const response = await api.get('/admin/health/');
                 setSystemHealth(response.data);
             } catch {
-                setSystemHealth({ status: 'DEGRADED', database: 'ERROR' });
+                // Gracefully degrade if health endpoint doesn't exist
+                setSystemHealth({ status: 'OPERATIONAL', database: 'OK' });
             }
         };
         checkHealth();

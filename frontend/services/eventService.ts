@@ -92,6 +92,7 @@ export const fetchEvents = async (): Promise<IntelligenceEvent[]> => {
         return eventData.map(transformBackendEvent);
     } catch (error) {
         console.error('Error fetching events:', error);
+        // Return empty array gracefully for demo
         return [];
     }
 };

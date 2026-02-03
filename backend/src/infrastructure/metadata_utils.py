@@ -1,4 +1,9 @@
-from PIL import Image, ExifTags
+try:
+    from PIL import Image, ExifTags
+    PILLOW_AVAILABLE = True
+except ImportError:
+    PILLOW_AVAILABLE = False
+
 from typing import Dict, Any
 
 class MetadataExtractor:
@@ -16,7 +21,7 @@ class MetadataExtractor:
         
         try:
             # Check if it's an image
-            if 'image' in file_obj.content_type:
+            if 'image' in file_obj.content_type and PILLOW_AVAILABLE:
                 try:
                     img = Image.open(file_obj)
                     if hasattr(img, '_getexif') and img._getexif():
@@ -36,6 +41,8 @@ class MetadataExtractor:
                                     metadata[tag] = str(exif[tag])
                 except Exception as e:
                     metadata['error'] = f"Image processing failed: {str(e)}"
+            elif 'image' in file_obj.content_type and not PILLOW_AVAILABLE:
+                metadata['note'] = "Pillow not installed - EXIF data not extracted"
         
         except Exception as e:
             metadata['error'] = str(e)
