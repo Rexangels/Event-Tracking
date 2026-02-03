@@ -4,7 +4,7 @@ import * as d3 from 'd3';
 
 interface AnalyticGraphProps {
     data: any[];
-    type: 'bar' | 'line' | 'network';
+    type: 'bar' | 'line' | 'network' | 'table';
     title: string;
 }
 
@@ -49,6 +49,10 @@ const AnalyticGraph: React.FC<AnalyticGraphProps> = ({ data, type, title }) => {
                 .attr('fill', '#94a3b8')
                 .style('font-size', '10px');
 
+            // Custom Color Palette
+            const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'];
+            const colorScale = d3.scaleOrdinal(colors);
+
             svg.selectAll('.bar')
                 .data(data)
                 .enter()
@@ -58,20 +62,8 @@ const AnalyticGraph: React.FC<AnalyticGraphProps> = ({ data, type, title }) => {
                 .attr('y', d => y(d.value || 0))
                 .attr('width', x.bandwidth())
                 .attr('height', d => Math.max(0, height - margin.bottom - y(d.value || 0)))
-                .attr('fill', 'url(#bar-gradient)')
+                .attr('fill', (d, i) => colorScale(i.toString()))
                 .attr('rx', 4);
-
-            // Add Gradient
-            const defs = svg.append('defs');
-            const gradient = defs.append('linearGradient')
-                .attr('id', 'bar-gradient')
-                .attr('x1', '0%')
-                .attr('y1', '0%')
-                .attr('x2', '0%')
-                .attr('y2', '100%');
-
-            gradient.append('stop').attr('offset', '0%').attr('stop-color', '#3b82f6');
-            gradient.append('stop').attr('offset', '100%').attr('stop-color', '#1d4ed8');
 
         } else if (type === 'line') {
             const x = d3.scaleTime()
@@ -170,6 +162,39 @@ const AnalyticGraph: React.FC<AnalyticGraphProps> = ({ data, type, title }) => {
             .text(title);
 
     }, [data, type, title]);
+
+    if (type === 'table') {
+        return (
+            <div className="w-full bg-slate-900/50 rounded-xl border border-slate-800 p-4 mt-4 relative overflow-hidden group">
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-sm font-bold text-slate-200">{title}</h3>
+                    <div className="px-2 py-0.5 rounded bg-blue-500/10 border border-blue-500/20 text-[10px] text-blue-400 font-mono">
+                        TABLE
+                    </div>
+                </div>
+                <div className="overflow-x-auto custom-scrollbar">
+                    <table className="w-full text-xs text-left text-slate-400">
+                        <thead className="text-xs text-slate-300 uppercase bg-slate-800/50">
+                            <tr>
+                                {data.length > 0 && Object.keys(data[0]).map((key) => (
+                                    <th key={key} className="px-4 py-3">{key.replace(/_/g, ' ')}</th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {data.map((row, i) => (
+                                <tr key={i} className="border-b border-slate-800 hover:bg-slate-800/30">
+                                    {Object.values(row).map((val: any, j) => (
+                                        <td key={j} className="px-4 py-3">{typeof val === 'object' ? JSON.stringify(val) : String(val)}</td>
+                                    ))}
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="w-full h-80 bg-slate-900/50 rounded-xl border border-slate-800 p-4 mt-4 relative overflow-hidden group">

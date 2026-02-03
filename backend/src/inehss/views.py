@@ -376,4 +376,30 @@ class MediaAttachmentViewSet(viewsets.ModelViewSet):
         attachment.save()
         
         serializer = self.get_serializer(attachment)
+        
+        # Sync to Infrastructure Event System
+        try:
+            from infrastructure.models import MediaModel
+            
+            event = None
+            if attachment.report and attachment.report.event:
+                event = attachment.report.event
+            elif attachment.submission and attachment.submission.assignment.report.event:
+                event = attachment.submission.assignment.report.event
+                
+            if event:
+                MediaModel.objects.create(
+                    event=event,
+                    file=attachment.file,
+                    file_type=attachment.file_type,
+                    metadata={
+                        'source': 'inehss', 
+                        'original_filename': attachment.original_filename,
+                        'inehss_attachment_id': str(attachment.id)
+                    }
+                )
+                print(f"Synced attachment {attachment.id} to Event {event.id}")
+        except Exception as e:
+            print(f"Failed to sync attachment to event system: {e}")
+
         return Response(serializer.data, status=status.HTTP_201_CREATED)

@@ -119,7 +119,7 @@ export async function submitInspection(
     location: { latitude: number; longitude: number } | null,
     isDraft: boolean,
     token: string
-): Promise<void> {
+): Promise<any> {
     const payload = {
         assignment: assignmentId,
         data,
@@ -127,9 +127,10 @@ export async function submitInspection(
         longitude: location?.longitude,
         is_draft: isDraft,
     };
-    await axios.post(`${API_BASE}/submissions/`, payload, {
+    const response = await axios.post(`${API_BASE}/submissions/`, payload, {
         headers: { Authorization: `Token ${token}` }
     });
+    return response.data;
 }
 
 export async function completeAssignment(assignmentId: string, token: string): Promise<void> {

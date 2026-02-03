@@ -33,7 +33,20 @@ const AnalystModule: React.FC<AnalystModuleProps> = ({ events, sharedExports = [
   };
 
   const downloadFile = (file: ExportFile) => {
-    const blob = new Blob([file.data], { type: file.type === 'pdf' ? 'text/plain' : file.type === 'csv' ? 'text/csv' : 'application/json' });
+    let blobPart: BlobPart = file.data;
+
+    // If it's a PDF, the data is base64 encoded and needs decoding
+    if (file.type === 'pdf') {
+      const byteCharacters = atob(file.data);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      blobPart = new Uint8Array(byteNumbers);
+    }
+
+    const type = file.type === 'pdf' ? 'application/pdf' : file.type === 'csv' ? 'text/csv' : 'application/json';
+    const blob = new Blob([blobPart], { type });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;

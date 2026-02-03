@@ -42,10 +42,13 @@ class HazardReportCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = HazardReport
         fields = [
+            'id', 'tracking_id',  # Read-only, returned after creation
             'form_template', 'data', 
             'latitude', 'longitude', 'address',
-            'reporter_name', 'reporter_phone', 'reporter_email'
+            'reporter_name', 'reporter_phone', 'reporter_email',
+            'status', 'priority'
         ]
+        read_only_fields = ['id', 'tracking_id']
     
     def create(self, validated_data):
         # Capture IP and user agent from request
@@ -84,13 +87,14 @@ class OfficerAssignmentSerializer(serializers.ModelSerializer):
     """Serializer for officer assignments"""
     officer_username = serializers.CharField(source='officer.username', read_only=True)
     latest_draft = serializers.SerializerMethodField()
+    latest_submission = serializers.SerializerMethodField()
     
     class Meta:
         model = OfficerAssignment
         fields = [
             'id', 'report', 'officer', 'officer_username', 'inspection_form',
             'status', 'notes', 'assigned_at', 'due_date', 'completed_at',
-            'latest_draft'
+            'latest_draft', 'latest_submission'
         ]
         read_only_fields = ['id', 'assigned_at', 'completed_at']
 
@@ -118,13 +122,21 @@ class OfficerAssignmentSerializer(serializers.ModelSerializer):
             return FormSubmissionSerializer(last_submission).data
         return None
 
+    def get_latest_submission(self, obj):
+        # Return the most recent submission regardless of draft status
+        last_submission = obj.submissions.order_by('-submitted_at').first()
+        if last_submission:
+            return FormSubmissionSerializer(last_submission).data
+        return None
+
 
 class FormSubmissionCreateSerializer(serializers.ModelSerializer):
     """Serializer for creating officer form submissions"""
     
     class Meta:
         model = FormSubmission
-        fields = ['assignment', 'data', 'latitude', 'longitude', 'is_draft']
+        fields = ['id', 'assignment', 'data', 'latitude', 'longitude', 'is_draft']
+        read_only_fields = ['id']
     
     def create(self, validated_data):
         request = self.context.get('request')

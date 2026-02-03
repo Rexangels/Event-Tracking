@@ -61,6 +61,7 @@ const INEHSSAdminModule: React.FC = () => {
     const [selectedOfficer, setSelectedOfficer] = useState<string>('');
     const [selectedInspectionForm, setSelectedInspectionForm] = useState<string>('');
     const [assignmentNotes, setAssignmentNotes] = useState('');
+    const [isSubmittingAssignment, setIsSubmittingAssignment] = useState(false);
 
     // Officer Creation State
     const [isOfficerModalOpen, setIsOfficerModalOpen] = useState(false);
@@ -198,6 +199,9 @@ const INEHSSAdminModule: React.FC = () => {
     // === Assignment ===
 
     const createAssignment = async () => {
+        // Prevent double submission
+        if (isSubmittingAssignment) return;
+
         const isDirect = !!directAssignmentTemplate;
 
         // Early validation: ensure we have either a report or a direct assignment context
@@ -210,6 +214,8 @@ const INEHSSAdminModule: React.FC = () => {
             setError('Please select an officer and inspection form');
             return;
         }
+
+        setIsSubmittingAssignment(true);
 
         try {
             let finalReportId = assignmentModalReport?.id;
@@ -270,6 +276,8 @@ const INEHSSAdminModule: React.FC = () => {
             loadData();
         } catch (err) {
             setError('Failed to create assignment');
+        } finally {
+            setIsSubmittingAssignment(false);
         }
     };
 
@@ -882,9 +890,13 @@ const INEHSSAdminModule: React.FC = () => {
                             </button>
                             <button
                                 onClick={createAssignment}
-                                className="flex-1 py-3 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-medium transition-all"
+                                disabled={isSubmittingAssignment}
+                                className={`flex-1 py-3 rounded-lg font-medium transition-all ${isSubmittingAssignment
+                                        ? 'bg-purple-800 text-purple-300 cursor-not-allowed'
+                                        : 'bg-purple-600 hover:bg-purple-500 text-white'
+                                    }`}
                             >
-                                Assign
+                                {isSubmittingAssignment ? 'Assigning...' : 'Assign'}
                             </button>
                         </div>
                     </div>

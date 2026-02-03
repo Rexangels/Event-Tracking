@@ -149,23 +149,30 @@ class StatsSummaryView(APIView):
         description="Returns aggregated data for the top-bar HUD (Active reports, Risk index)."
     )
     def get(self, request, *args, **kwargs):
-        total_events = EventModel.objects.count()
-        critical_events = EventModel.objects.filter(severity=EventSeverity.CRITICAL.value).count()
-        high_events = EventModel.objects.filter(severity=EventSeverity.HIGH.value).count()
-        
-        # Calculate sensor integrity (mock logic based on recent verified events)
-        verified_count = EventModel.objects.filter(status='VERIFIED').count()
-        integrity = (verified_count / total_events * 100) if total_events > 0 else 100
-        
-        # Calculate heat index (mock logic - e.g., density of high severity events)
-        heat_index = min(10.0, (critical_events * 2 + high_events) / 10.0)
-        
-        return Response({
-            'active_reports': total_events,
-            'critical_sectors': critical_events,
-            'sensor_integrity': round(integrity, 1),
-            'global_heat_index': round(heat_index, 1)
-        })
+        try:
+            total_events = EventModel.objects.count()
+            critical_events = EventModel.objects.filter(severity=EventSeverity.CRITICAL.value).count()
+            high_events = EventModel.objects.filter(severity=EventSeverity.HIGH.value).count()
+            
+            # Calculate sensor integrity (mock logic based on recent verified events)
+            verified_count = EventModel.objects.filter(status='VERIFIED').count()
+            integrity = (verified_count / total_events * 100) if total_events > 0 else 100
+            
+            # Calculate heat index (mock logic - e.g., density of high severity events)
+            heat_index = min(10.0, (critical_events * 2 + high_events) / 10.0)
+            
+            return Response({
+                'active_reports': total_events,
+                'critical_sectors': critical_events,
+                'sensor_integrity': round(integrity, 1),
+                'global_heat_index': round(heat_index, 1)
+            })
+        except Exception as e:
+            import traceback
+            with open('server_error.log', 'a') as f:
+                f.write(f"StatsSummaryView Error: {str(e)}\n")
+                f.write(traceback.format_exc())
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
     """
@@ -196,6 +203,7 @@ class CustomAuthToken(ObtainAuthToken):
             'username': user.username,
             'is_staff': user.is_staff
         })
+
 class EventActionView(APIView):
     """
     Handle lifecycle actions for events: verify, escalate, archive.
@@ -244,17 +252,28 @@ class HealthCheckView(APIView):
     permission_classes = [permissions.AllowAny]
     @extend_schema(responses={200: OpenApiTypes.OBJECT})
     def get(self, request, *args, **kwargs):
-        health = {
-            'status': 'OPERATIONAL',
-            'database': 'CONNECTED',
-            'services': 'STABLE',
-            'latency': 'OK'
-        }
         try:
-            from django.db import connection
-            connection.ensure_connection()
-        except:
-            health['database'] = 'ERROR'
-            health['status'] = 'DEGRADED'
-            
-        return Response(health)
+            health = {
+                'status': 'OPERATIONAL',
+                'database': 'CONNECTED',
+                'services': 'STABLE',
+                'latency': 'OK'
+            }
+            try:
+                from django.db import connection
+                connection.ensure_connection()
+            except Exception as e:
+                import traceback
+                with open('server_error.log', 'a') as f:
+                    f.write(f"DB Connection Error: {str(e)}\n")
+                    f.write(traceback.format_exc())
+                health['database'] = 'ERROR'
+                health['status'] = 'DEGRADED'
+                
+            return Response(health)
+        except Exception as e:
+            import traceback
+            with open('server_error.log', 'a') as f:
+                f.write(f"HealthCheckView Critical Error: {str(e)}\n")
+                f.write(traceback.format_exc())
+            return Response({'status': 'CRITICAL', 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

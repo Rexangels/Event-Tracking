@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { IntelligenceEvent } from '../types';
 import { startDeepDiveChat, sendDeepDiveMessage, DeepDiveResponse } from '../services/geminiService';
 import AnalyticGraph from './AnalyticGraph';
@@ -16,13 +17,35 @@ interface DeepDiveChatProps {
     onExport?: (file: { name: string; type: string; data: string }) => void;
 }
 
+const STORAGE_KEY = 'deepdive_chat_history';
+
 const DeepDiveChat: React.FC<DeepDiveChatProps> = ({ events, onExport }) => {
-    const [messages, setMessages] = useState<Message[]>([]);
+    // Load initial messages from sessionStorage
+    const [messages, setMessages] = useState<Message[]>(() => {
+        try {
+            const saved = sessionStorage.getItem(STORAGE_KEY);
+            if (saved) {
+                return JSON.parse(saved);
+            }
+        } catch (e) {
+            console.warn('Failed to load chat history from sessionStorage:', e);
+        }
+        return [];
+    });
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const scrollRef = useRef<HTMLDivElement>(null);
 
     const isInitialized = useRef(false);
+
+    // Save messages to sessionStorage whenever they change
+    useEffect(() => {
+        try {
+            sessionStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+        } catch (e) {
+            console.warn('Failed to save chat history to sessionStorage:', e);
+        }
+    }, [messages]);
 
     const initChat = async (isReset = false) => {
         // If already initialized and not a reset, don't clear messages
@@ -51,8 +74,9 @@ const DeepDiveChat: React.FC<DeepDiveChatProps> = ({ events, onExport }) => {
 
     const handleNewSession = () => {
         if (confirm("Are you sure you want to start a new analysis session? This will clear current chat history.")) {
-            // Force reset
+            // Force reset and clear storage
             isInitialized.current = false;
+            sessionStorage.removeItem(STORAGE_KEY);
             initChat(true);
         }
     };
@@ -145,7 +169,9 @@ const DeepDiveChat: React.FC<DeepDiveChatProps> = ({ events, onExport }) => {
                         <div className={`max-w-[85%] ${m.role === 'user' ? 'bg-blue-600 text-white rounded-2xl rounded-tr-none px-4 py-3' : 'bg-slate-900 border border-slate-800 text-slate-300 rounded-2xl rounded-tl-none px-5 py-4 shadow-lg'}`}>
                             {m.role === 'agent' ? (
                                 <div className="markdown-content text-sm leading-relaxed font-light">
-                                    <ReactMarkdown>{m.content.replace(/\[EXPORT_DATA\][\s\S]*?\[\/EXPORT_DATA\]/, '').trim()}</ReactMarkdown>
+                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                        {m.content.replace(/\[EXPORT_DATA\][\s\S]*?\[\/EXPORT_DATA\]/, '').trim() || "_Report generated successfully. Check the export pipeline._"}
+                                    </ReactMarkdown>
                                 </div>
                             ) : (
                                 <div className="text-sm leading-relaxed whitespace-pre-wrap font-light">

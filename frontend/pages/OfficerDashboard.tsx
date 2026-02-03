@@ -10,6 +10,7 @@ import {
     acceptAssignment,
     submitInspection,
     completeAssignment,
+    uploadAttachment,
     OfficerAssignment
 } from '../services/inehssService';
 
@@ -63,12 +64,33 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
 
         setIsSubmitting(true);
         try {
-            await submitInspection(selectedAssignment.id, data, location, false, authToken);
+            // Separte files from data
+            const cleanData = { ...data };
+            const filesToUpload: File[] = [];
+
+            Object.keys(cleanData).forEach(key => {
+                if (cleanData[key] instanceof File) {
+                    filesToUpload.push(cleanData[key]);
+                    delete cleanData[key]; // Remove file from JSON payload
+                }
+            });
+
+            // Submit text data first
+            const submission = await submitInspection(selectedAssignment.id, cleanData, location, false, authToken);
+
+            // Upload files if any
+            if (filesToUpload.length > 0 && submission?.id) {
+                await Promise.all(filesToUpload.map(file =>
+                    uploadAttachment(file, undefined, submission.id, authToken)
+                ));
+            }
+
             await completeAssignment(selectedAssignment.id, authToken);
             setSuccessMessage('Inspection submitted successfully!');
             setSelectedAssignment(null);
             await loadAssignments();
         } catch (err) {
+            console.error(err);
             setError('Failed to submit inspection');
         } finally {
             setIsSubmitting(false);
@@ -152,7 +174,7 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
 
                         <DynamicFormRenderer
                             schema={selectedAssignment.inspection_form.schema}
-                            initialData={(selectedAssignment as any).latest_draft?.data || {}}
+                            initialData={(selectedAssignment as any).latest_submission?.data || {}}
                             onSubmit={handleSubmitInspection}
                             onSaveDraft={handleSaveDraft}
                             isSubmitting={isSubmitting}
