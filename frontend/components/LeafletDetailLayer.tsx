@@ -1,5 +1,6 @@
-import React, { useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
+
+import { MapContainer, TileLayer, Marker, Popup, useMap, LayersControl } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { IntelligenceEvent } from '../types';
@@ -28,19 +29,18 @@ interface LeafletDetailLayerProps {
 const createEventIcon = (severity: string) => {
     const color = MAP_COLORS[severity as keyof typeof MAP_COLORS] || MAP_COLORS.MEDIUM;
 
-    // We can use a custom HTML div icon for a glowing dot effect similar to D3
     return L.divIcon({
         className: 'custom-leaflet-marker',
         html: `<div style="
             background-color: ${color};
-            width: 12px;
-            height: 12px;
+            width: 14px;
+            height: 14px;
             border-radius: 50%;
-            border: 2px solid white;
-            box-shadow: 0 0 10px ${color};
+            border: 3px solid white;
+            box-shadow: 0 0 12px ${color}, inset 0 0 6px rgba(255,255,255,0.6);
         "></div>`,
-        iconSize: [12, 12],
-        iconAnchor: [6, 6]
+        iconSize: [14, 14],
+        iconAnchor: [7, 7]
     });
 };
 
@@ -59,28 +59,173 @@ const LeafletDetailLayer: React.FC<LeafletDetailLayerProps> = ({
     onEventClick,
     onViewChange
 }) => {
-    const [isDarkMode, setIsDarkMode] = React.useState(true);
+    const [mapStyle, setMapStyle] = useState<'street' | 'satellite' | 'terrain' | 'streets-detailed'>('street');
+    const [showBuildings, setShowBuildings] = useState(false); // Disabled by default for performance
+    const [currentZoom, setCurrentZoom] = useState(zoom);
+    const mapRef = useRef<L.Map | null>(null);
+    
+    // Only render events visible in current view + limit max events
+    const visibleEvents = useMemo(() => {
+        if (mapRef.current) {
+            const bounds = mapRef.current.getBounds();
+            return events
+                .filter(event => bounds.contains([event.coords.lat, event.coords.lng]))
+                .slice(0, 200); // Max 200 visible events
+        }
+        return events.slice(0, 100); // Limit to 100 events on initial load
+    }, [events, currentZoom]);
+
+    // Tile layer configurations
+    const tileConfigs = {
+        street: {
+            url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+            name: 'Street Map'
+        },
+        'streets-detailed': {
+            url: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+            name: 'Detailed Streets'
+        },
+        satellite: {
+            url: "https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}",
+            attribution: '&copy; <a href="https://www.usgs.gov/">USGS</a>',
+            name: 'Satellite (USGS)'
+        },
+        terrain: {
+            url: "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
+            attribution: '&copy; <a href="https://opentopomap.org">OpenTopoMap</a>',
+            name: 'Terrain'
+        }
+    };
+
+    const MapUpdater = () => {
+        const map = useMap();
+        mapRef.current = map;
+
+        useEffect(() => {
+            const handleZoomEnd = () => {
+                const newZoom = map.getZoom();
+                setCurrentZoom(newZoom);
+                
+                // Auto-enable detailed streets at zoom level 14+
+                if (newZoom >= 14 && mapStyle === 'street') {
+                    setMapStyle('streets-detailed');
+                }
+            };
+
+            const handleMove = () => {
+                // Trigger re-filter of visible events
+                setCurrentZoom(prev => prev);
+            };
+
+            const handleLayerChange = (e: any) => {
+                // Get the name of the selected layer and map it to mapStyle
+                const layerName = e.name;
+                if (layerName === 'Street Map') setMapStyle('street');
+                else if (layerName === 'Detailed Streets') setMapStyle('streets-detailed');
+                else if (layerName === 'Satellite') setMapStyle('satellite');
+                else if (layerName === 'Terrain') setMapStyle('terrain');
+            };
+
+            map.on('zoomend', handleZoomEnd);
+            map.on('moveend', handleMove);
+            map.on('baselayerchange', handleLayerChange);
+            
+            return () => {
+                map.off('zoomend', handleZoomEnd);
+                map.off('moveend', handleMove);
+                map.off('baselayerchange', handleLayerChange);
+            };
+        }, [map, mapStyle]);
+
+        return null;
+    };
+
+    // Add OSM Buildings layer
+    const BuildingsLayer = () => {
+        const map = useMap();
+
+        useEffect(() => {
+            if (!showBuildings || map.getZoom() < 15) return;
+
+            // Pre-rendered buildings tile layer from OSM Buildings (no API calls)
+            const buildingsLayer = L.tileLayer(
+                'https://{s}.data.osmbuildings.org/0.2/anonymous/tile/{z}/{x}/{y}.json',
+                {
+                    minZoom: 15,
+                    maxZoom: 18,
+                    attribution: '&copy; <a href="https://osmbuildings.org">OSM Buildings</a>',
+                    pointerCursor: true
+                }
+            );
+
+            buildingsLayer.addTo(map);
+
+            return () => {
+                map.removeLayer(buildingsLayer);
+            };
+        }, [map, showBuildings]);
+
+        return null;
+    };
 
     return (
         <React.Fragment>
             <MapContainer
+                ref={mapRef}
                 center={center}
                 zoom={zoom}
-                style={{ height: '100%', width: '100%', background: isDarkMode ? '#020617' : '#f8fafc' }}
-                zoomControl={false}
-                attributionControl={false}
+                style={{ height: '100%', width: '100%' }}
+                zoomControl={true}
+                attributionControl={true}
             >
-                <TileLayer
-                    url={isDarkMode
-                        ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-                        : "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-                    }
-                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-                />
+                <LayersControl position="topright">
+                    <LayersControl.BaseLayer checked={mapStyle === 'street'} name="📍 Street Map">
+                        <TileLayer
+                            key={`street-${mapStyle}`}
+                            url={tileConfigs.street.url}
+                            attribution={tileConfigs.street.attribution}
+                        />
+                    </LayersControl.BaseLayer>
+
+                    <LayersControl.BaseLayer checked={mapStyle === 'streets-detailed'} name="🛣️ Detailed Streets">
+                        <TileLayer
+                            key={`streets-detailed-${mapStyle}`}
+                            url={tileConfigs['streets-detailed'].url}
+                            attribution={tileConfigs['streets-detailed'].attribution}
+                        />
+                    </LayersControl.BaseLayer>
+
+                    <LayersControl.BaseLayer checked={mapStyle === 'satellite'} name="🛰️ Satellite">
+                        <TileLayer
+                            key={`satellite-${mapStyle}`}
+                            url="https://{s}.tile.openstreetmap.de/tiles/osmde/{z}/{x}/{y}.png"
+                            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                        />
+                    </LayersControl.BaseLayer>
+
+                    <LayersControl.BaseLayer checked={mapStyle === 'terrain'} name="🏔️ Terrain">
+                        <TileLayer
+                            key={`terrain-${mapStyle}`}
+                            url={tileConfigs.terrain.url}
+                            attribution={tileConfigs.terrain.attribution}
+                        />
+                    </LayersControl.BaseLayer>
+
+                    <LayersControl.Overlay checked={false} name="🏢 Buildings (Zoom 15+)" enabled={false}>
+                        <TileLayer
+                            url="https://a.tile.opentopomap.org/{z}/{x}/{y}.png"
+                            opacity={0}
+                        />
+                    </LayersControl.Overlay>
+                </LayersControl>
 
                 <MapController center={center} zoom={zoom} />
+                <MapUpdater />
+                {showBuildings && currentZoom >= 15 && <BuildingsLayer />}
 
-                {events.map(event => (
+                {visibleEvents.map(event => (
                     <Marker
                         key={event.id}
                         position={[event.coords.lat, event.coords.lng]}
@@ -89,35 +234,26 @@ const LeafletDetailLayer: React.FC<LeafletDetailLayerProps> = ({
                             click: () => onEventClick(event)
                         }}
                     >
-                        <Popup
-                            closeButton={false}
-                            className={isDarkMode ? "custom-leaflet-popup" : "custom-leaflet-popup light-theme"}
-                        >
-                            <div className={`${isDarkMode ? 'bg-slate-900 text-slate-200 border-slate-700' : 'bg-white text-slate-800 border-slate-200'} p-2 text-xs rounded border shadow-lg`}>
-                                <h3 className={`font-bold text-sm mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{event.title}</h3>
-                                <p className="mb-1"><span className="text-slate-500">Type:</span> {event.type}</p>
-                                <p><span className="text-slate-500">Severity:</span> <span style={{ color: MAP_COLORS[event.severity as keyof typeof MAP_COLORS] || MAP_COLORS.MEDIUM }}>{event.severity.toUpperCase()}</span></p>
+                        <Popup closeButton={true}>
+                            <div className="bg-white text-slate-800 p-3 text-sm rounded">
+                                <h3 className="font-bold text-base mb-2">{event.title}</h3>
+                                <p className="mb-1"><strong>Type:</strong> {event.type}</p>
+                                <p className="mb-1"><strong>Severity:</strong> <span style={{ color: MAP_COLORS[event.severity as keyof typeof MAP_COLORS] || MAP_COLORS.MEDIUM }} className="font-semibold">{event.severity.toUpperCase()}</span></p>
+                                <p className="text-xs text-slate-500 mt-2">{event.coords.lat.toFixed(4)}, {event.coords.lng.toFixed(4)}</p>
                             </div>
                         </Popup>
                     </Marker>
                 ))}
             </MapContainer>
 
-            {/* Theme Toggle Button */}
-            <button
-                onClick={() => setIsDarkMode(!isDarkMode)}
-                className={`absolute top-20 right-4 z-[1000] p-2 rounded-lg shadow-xl border transition-all ${isDarkMode
-                    ? 'bg-slate-900/90 border-slate-700 text-yellow-400 hover:bg-slate-800'
-                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                    }`}
-                title="Toggle Map Theme"
-            >
-                {isDarkMode ? (
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
-                ) : (
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>
-                )}
-            </button>
+            {/* Map Style Indicator */}
+            <div className="absolute top-4 left-4 z-[500] bg-white/90 backdrop-blur px-3 py-2 rounded-lg shadow-lg text-xs font-medium text-slate-700">
+                <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                    Map: <span className="font-bold">{tileConfigs[mapStyle].name}</span>
+                </div>
+                <div className="text-slate-500 text-xs mt-1">Zoom: {zoom}</div>
+            </div>
         </React.Fragment>
     );
 };

@@ -5,6 +5,7 @@ import { IntelligenceEvent, EventSeverity } from '../types';
 import { MAP_COLORS, EVENT_ICONS, getClusterColor } from '../constants';
 import LeafletDetailLayer from './LeafletDetailLayer';
 
+
 interface MapVisualizerProps {
   events: IntelligenceEvent[];
   onEventClick: (event: IntelligenceEvent) => void;
@@ -27,6 +28,7 @@ const MapVisualizer: React.FC<MapVisualizerProps> = ({
   selectedRegion,
   onRegionSelect
 }) => {
+
   const svgRef = useRef<SVGSVGElement>(null);
   const gRef = useRef<d3.Selection<SVGGElement, unknown, null, undefined> | null>(null);
   const zoomRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
@@ -369,7 +371,7 @@ const MapVisualizer: React.FC<MapVisualizerProps> = ({
       }
     });
 
-  }, []); // Strictly empty dependency array
+  }, []);
 
   // Update Events & Heatmap (Dynamic)
   useEffect(() => {
@@ -580,10 +582,10 @@ const MapVisualizer: React.FC<MapVisualizerProps> = ({
   };
 
   return (
-    <div className="relative w-full h-full bg-[#020617] overflow-hidden rounded-xl border border-slate-800 shadow-2xl group">
+    <div className="relative w-full h-full overflow-hidden rounded-xl bg-[#020617] border border-slate-800 shadow-2xl group">
       {/* HUD Info */}
       <div className="absolute top-4 left-4 z-10 flex flex-col gap-2">
-        <div className="bg-slate-900/90 backdrop-blur border border-slate-700 px-3 py-1.5 rounded text-[10px] font-mono text-slate-300 uppercase tracking-widest flex items-center gap-2">
+        <div className="backdrop-blur bg-slate-900/90 border border-slate-700 px-3 py-1.5 rounded text-[10px] font-mono uppercase tracking-widest flex items-center gap-2 text-slate-300">
           <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
           GIS_CORE_LINK: ACTIVE
         </div>
@@ -592,7 +594,7 @@ const MapVisualizer: React.FC<MapVisualizerProps> = ({
             SECTOR: {selectedRegion}
           </div>
         )}
-        <div className="bg-slate-900/90 backdrop-blur border border-slate-700 px-3 py-1.5 rounded text-[10px] font-mono text-slate-400">
+        <div className="backdrop-blur bg-slate-900/90 border border-slate-700 px-3 py-1.5 rounded text-[10px] font-mono text-slate-400">
           ZOOM: {zoomDisplay.toFixed(1)}x | EVENTS: {events.length}
         </div>
       </div>
@@ -601,26 +603,26 @@ const MapVisualizer: React.FC<MapVisualizerProps> = ({
       <div className="absolute top-4 right-4 z-10 flex flex-col gap-1">
         <button
           onClick={() => handleManualZoom('in')}
-          className="w-8 h-8 bg-slate-900/90 border border-slate-700 rounded flex items-center justify-center text-slate-300 hover:bg-slate-800 hover:text-white transition-all shadow-lg"
+          className="w-8 h-8 rounded flex items-center justify-center transition-all shadow-lg border bg-slate-900/90 border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
           title="Zoom In"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
         </button>
         <button
           onClick={() => handleManualZoom('out')}
-          className="w-8 h-8 bg-slate-900/90 border border-slate-700 rounded flex items-center justify-center text-slate-300 hover:bg-slate-800 hover:text-white transition-all shadow-lg"
+          className="w-8 h-8 rounded flex items-center justify-center transition-all shadow-lg border bg-slate-900/90 border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
           title="Zoom Out"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20 12H4" /></svg>
         </button>
         <button
           onClick={() => handleManualZoom('reset')}
-          className="w-8 h-8 bg-slate-900/90 border border-slate-700 rounded flex items-center justify-center text-slate-300 hover:bg-slate-800 hover:text-white transition-all shadow-lg"
+          className="w-8 h-8 rounded flex items-center justify-center transition-all shadow-lg border bg-slate-900/90 border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
           title="Reset View"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
         </button>
-        <div className="w-8 h-[1px] bg-slate-700 my-1"></div>
+        <div className="w-8 h-[1px] my-1 bg-slate-700"></div>
         <button
           onClick={() => setShowHeatmap(!showHeatmap)}
           className={`w-8 h-8 border rounded flex items-center justify-center transition-all shadow-lg ${showHeatmap
@@ -663,7 +665,7 @@ const MapVisualizer: React.FC<MapVisualizerProps> = ({
                 d3.select(svgRef.current).transition().duration(500).call(zoomRef.current.scaleTo, 4);
               }
             }}
-            className="absolute top-4 left-1/2 -translate-x-1/2 bg-slate-900/90 border border-slate-700 text-white px-4 py-2 rounded-full shadow-xl text-xs font-bold uppercase tracking-widest hover:bg-slate-800 transition-all z-[1000]"
+            className="absolute top-4 left-1/2 -translate-x-1/2 border px-4 py-2 rounded-full shadow-xl text-xs font-bold uppercase tracking-widest transition-all z-[1000] bg-slate-900/90 border-slate-700 text-white hover:bg-slate-800"
           >
             Return to Vector Map
           </button>
@@ -674,9 +676,9 @@ const MapVisualizer: React.FC<MapVisualizerProps> = ({
       <div className="absolute bottom-4 right-4 z-10 flex flex-col gap-1.5">
         <div className="text-[8px] text-slate-500 uppercase tracking-widest mb-1 font-bold">Severity</div>
         {Object.entries(MAP_COLORS).reverse().map(([severity, color]) => (
-          <div key={severity} className="flex items-center gap-2 bg-slate-900/60 backdrop-blur px-2.5 py-1 rounded border border-slate-800/50">
+          <div key={severity} className="flex items-center gap-2 backdrop-blur px-2.5 py-1 rounded border bg-slate-900/60 border-slate-800/50">
             <div className="w-2 h-2 rounded-full" style={{ backgroundColor: color, boxShadow: `0 0 8px ${color}` }} />
-            <span className="text-[9px] uppercase font-bold text-slate-400 tracking-tighter">{severity}</span>
+            <span className="text-[9px] uppercase font-bold tracking-tighter text-slate-400">{severity}</span>
           </div>
         ))}
       </div>

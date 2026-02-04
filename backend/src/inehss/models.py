@@ -143,7 +143,9 @@ class OfficerAssignment(models.Model):
     report = models.ForeignKey(
         HazardReport,
         on_delete=models.CASCADE,
-        related_name='assignments'
+        related_name='assignments',
+        null=True,
+        blank=True
     )
     officer = models.ForeignKey(
         User,
@@ -160,6 +162,7 @@ class OfficerAssignment(models.Model):
     )
     
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    is_persistent = models.BooleanField(default=False, help_text="If true, assignment remains open for multiple submissions (Patrol Mode)")
     notes = models.TextField(blank=True, help_text="Admin notes for the officer")
     
     assigned_by = models.ForeignKey(

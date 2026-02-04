@@ -13,7 +13,7 @@ interface RegionIntelligencePanelProps {
 const RegionIntelligencePanel: React.FC<RegionIntelligencePanelProps> = ({ region, events, onClose }) => {
   const criticalEvents = events.filter(e => e.severity === EventSeverity.CRITICAL);
   const highEvents = events.filter(e => e.severity === EventSeverity.HIGH);
-  
+
   const mostSevereEvent = [...events].sort((a, b) => {
     const order = { [EventSeverity.CRITICAL]: 4, [EventSeverity.HIGH]: 3, [EventSeverity.MEDIUM]: 2, [EventSeverity.LOW]: 1 };
     return order[b.severity] - order[a.severity];
@@ -26,7 +26,7 @@ const RegionIntelligencePanel: React.FC<RegionIntelligencePanelProps> = ({ regio
           <span className="text-[9px] font-mono text-blue-500 uppercase tracking-widest block mb-0.5">Tactical Sector</span>
           <h2 className="text-sm font-bold text-slate-100 uppercase truncate">{region}</h2>
         </div>
-        <button 
+        <button
           onClick={onClose}
           className="text-slate-500 hover:text-slate-300 transition-colors"
         >

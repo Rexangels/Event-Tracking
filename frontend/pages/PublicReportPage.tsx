@@ -191,10 +191,10 @@ const PublicReportPage: React.FC = () => {
                         <div className="animate-spin w-10 h-10 border-4 border-green-500 border-t-transparent rounded-full" />
                     </div>
                 ) : selectedForm ? (
-                    <div className="bg-slate-800/50 backdrop-blur border border-slate-700 rounded-2xl p-6">
+                    <div className="bg-slate-800/50 backdrop-blur border border-slate-700 rounded-2xl p-6 max-h-[calc(100vh-200px)] overflow-y-auto">
                         <button
                             onClick={() => setSelectedForm(null)}
-                            className="flex items-center gap-2 text-slate-400 hover:text-white mb-4 transition-colors"
+                            className="flex items-center gap-2 text-slate-400 hover:text-white mb-4 transition-colors sticky top-0 z-10"
                         >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />

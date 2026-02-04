@@ -18,9 +18,17 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
     (response) => response,
     (error) => {
-        if (error.response?.status === 429) {
+        if (error.response?.status === 401) {
+            console.warn('SYSTEM_AUTH: Unauthorized access detected. Redirecting to login.');
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('refreshToken');
+            localStorage.removeItem('user');
+            // Redirect only if not already on login page to avoid loops
+            if (!window.location.pathname.includes('/login')) {
+                window.location.href = '/login';
+            }
+        } else if (error.response?.status === 429) {
             console.error('SYSTEM_THROTTLED: Rate limit exceeded. Refer to enterprise security policy.');
-            // This can be used to trigger a global notification in an actual app
         } else if (error.response?.status === 503) {
             console.error('SYSTEM_MAINTENANCE: Service temporarily unavailable.');
         }

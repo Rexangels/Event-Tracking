@@ -85,9 +85,16 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
                 ));
             }
 
-            await completeAssignment(selectedAssignment.id, authToken);
-            setSuccessMessage('Inspection submitted successfully!');
-            setSelectedAssignment(null);
+            // If persistent, skip completion so assignment stays open
+            if (!selectedAssignment.is_persistent) {
+                await completeAssignment(selectedAssignment.id, authToken);
+                setSuccessMessage('Inspection submitted successfully!');
+                setSelectedAssignment(null);
+            } else {
+                setSuccessMessage('Submission recorded! Form cleared for next patrol record.');
+                // Optionally clear initial data if the renderer doesn't
+            }
+
             await loadAssignments();
         } catch (err) {
             console.error(err);
@@ -138,34 +145,53 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
                 </header>
 
                 <main className="max-w-4xl mx-auto px-4 py-8">
-                    {/* Reference Report Info */}
-                    <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6 mb-6">
-                        <h3 className="text-lg font-semibold text-white mb-4">Reference Report</h3>
-                        <div className="grid grid-cols-2 gap-4 text-sm">
-                            <div>
-                                <span className="text-slate-500">Tracking ID</span>
-                                <p className="text-green-400 font-mono">{selectedAssignment.report.tracking_id}</p>
+                    {selectedAssignment.report ? (
+                        <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6 mb-6">
+                            <h3 className="text-lg font-semibold text-white mb-4">Reference Report</h3>
+                            <div className="grid grid-cols-2 gap-4 text-sm">
+                                <div>
+                                    <span className="text-slate-500">Tracking ID</span>
+                                    <p className="text-green-400 font-mono">{selectedAssignment.report.tracking_id}</p>
+                                </div>
+                                <div>
+                                    <span className="text-slate-500">Status</span>
+                                    <p className="text-slate-300">{selectedAssignment.report.status}</p>
+                                </div>
+                                <div>
+                                    <span className="text-slate-500">Priority</span>
+                                    <p className="text-slate-300">{selectedAssignment.report.priority}</p>
+                                </div>
+                                <div>
+                                    <span className="text-slate-500">Location</span>
+                                    <p className="text-slate-300">{selectedAssignment.report.address || 'N/A'}</p>
+                                </div>
                             </div>
-                            <div>
-                                <span className="text-slate-500">Status</span>
-                                <p className="text-slate-300">{selectedAssignment.report.status}</p>
-                            </div>
-                            <div>
-                                <span className="text-slate-500">Priority</span>
-                                <p className="text-slate-300">{selectedAssignment.report.priority}</p>
-                            </div>
-                            <div>
-                                <span className="text-slate-500">Location</span>
-                                <p className="text-slate-300">{selectedAssignment.report.address || 'N/A'}</p>
-                            </div>
+                            {selectedAssignment.notes && (
+                                <div className="mt-4 pt-4 border-t border-slate-700">
+                                    <span className="text-slate-500 text-sm">Admin Notes</span>
+                                    <p className="text-slate-300 mt-1">{selectedAssignment.notes}</p>
+                                </div>
+                            )}
                         </div>
-                        {selectedAssignment.notes && (
-                            <div className="mt-4 pt-4 border-t border-slate-700">
-                                <span className="text-slate-500 text-sm">Admin Notes</span>
-                                <p className="text-slate-300 mt-1">{selectedAssignment.notes}</p>
-                            </div>
-                        )}
-                    </div>
+                    ) : (
+                        <div className="bg-purple-500/10 border border-purple-500/20 rounded-xl p-6 mb-6">
+                            <h3 className="text-lg font-semibold text-white mb-2 flex items-center gap-2">
+                                <svg className="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-1.447-.894L15 9m0 11V9" />
+                                </svg>
+                                Patrol Strategy: General Inspection
+                            </h3>
+                            <p className="text-sm text-slate-400">
+                                This is a persistent patrol assignment. You can record multiple inspections at different locations using this form.
+                            </p>
+                            {selectedAssignment.notes && (
+                                <div className="mt-4 pt-4 border-t border-purple-500/20">
+                                    <span className="text-slate-500 text-sm">Admin Notes</span>
+                                    <p className="text-slate-300 mt-1">{selectedAssignment.notes}</p>
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     {/* Inspection Form */}
                     <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6">
@@ -262,13 +288,22 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
                                 <div className="flex items-start justify-between">
                                     <div>
                                         <div className="flex items-center gap-3 mb-2">
-                                            <span className="font-mono text-green-400">{assignment.report.tracking_id}</span>
+                                            {assignment.report ? (
+                                                <span className="font-mono text-green-400">{assignment.report.tracking_id}</span>
+                                            ) : (
+                                                <span className="px-2 py-0.5 bg-purple-500/20 text-purple-400 font-mono text-[10px] rounded border border-purple-500/30 font-bold uppercase tracking-wider">Patrol Mode</span>
+                                            )}
                                             <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusBadge(assignment.status)}`}>
                                                 {assignment.status.replace('_', ' ').toUpperCase()}
                                             </span>
+                                            {assignment.is_persistent && (
+                                                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="Persistent Assignment"></span>
+                                            )}
                                         </div>
-                                        <p className="text-white font-medium">{assignment.report.form_template.name}</p>
-                                        <p className="text-sm text-slate-400 mt-1">{assignment.report.address || 'Location not specified'}</p>
+                                        <p className="text-white font-medium">
+                                            {assignment.report ? assignment.report.form_template.name : assignment.inspection_form.name}
+                                        </p>
+                                        <p className="text-sm text-slate-400 mt-1">{assignment.report?.address || 'Patrol: Multiple Locations'}</p>
                                         {assignment.due_date && (
                                             <p className="text-xs text-yellow-400 mt-2">Due: {new Date(assignment.due_date).toLocaleDateString()}</p>
                                         )}

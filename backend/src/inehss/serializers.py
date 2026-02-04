@@ -88,13 +88,14 @@ class OfficerAssignmentSerializer(serializers.ModelSerializer):
     officer_username = serializers.CharField(source='officer.username', read_only=True)
     latest_draft = serializers.SerializerMethodField()
     latest_submission = serializers.SerializerMethodField()
+    submission_count = serializers.SerializerMethodField()
     
     class Meta:
         model = OfficerAssignment
         fields = [
             'id', 'report', 'officer', 'officer_username', 'inspection_form',
-            'status', 'notes', 'assigned_at', 'due_date', 'completed_at',
-            'latest_draft', 'latest_submission'
+            'status', 'is_persistent', 'notes', 'assigned_at', 'due_date', 'completed_at',
+            'latest_draft', 'latest_submission', 'submission_count'
         ]
         read_only_fields = ['id', 'assigned_at', 'completed_at']
 
@@ -128,6 +129,10 @@ class OfficerAssignmentSerializer(serializers.ModelSerializer):
         if last_submission:
             return FormSubmissionSerializer(last_submission).data
         return None
+
+    def get_submission_count(self, obj):
+        """Count non-draft submissions for patrol mode assignments"""
+        return obj.submissions.filter(is_draft=False).count()
 
 
 class FormSubmissionCreateSerializer(serializers.ModelSerializer):

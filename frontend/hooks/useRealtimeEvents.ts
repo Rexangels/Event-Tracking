@@ -39,11 +39,13 @@ export function useRealtimeEvents(options: UseRealtimeEventsOptions = {}) {
         // Don't connect if we're already connected or connecting
         if (wsRef.current?.readyState === WebSocket.OPEN || wsRef.current?.readyState === WebSocket.CONNECTING) return;
 
-        // WebSocket URL - adjust based on environment
+        // WebSocket URL - use window.location.host to connect to the same server
+        // This allows Vite proxy to forward the connection to the backend
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        // @ts-ignore - Vite env access
-        const wsHost = import.meta.env.VITE_WS_HOST || 'localhost:8000';
+        const wsHost = window.location.host; // Use same host as frontend
         const wsUrl = `${wsProtocol}//${wsHost}/ws/events/`;
+
+        console.log('[WebSocket] Attempting to connect to:', wsUrl);
 
         try {
             const ws = new WebSocket(wsUrl);

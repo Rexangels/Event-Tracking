@@ -18,6 +18,7 @@ import EventDetailPanel from '../components/EventDetailPanel';
 import Tooltip from '../components/ui/Tooltip';
 import { ExportFile } from '../services/ExportService';
 
+
 const AdminDashboard: React.FC = () => {
     const [events, setEvents] = useState<IntelligenceEvent[]>([]);
     const [exportedFiles, setExportedFiles] = useState<ExportFile[]>([]);
@@ -28,6 +29,7 @@ const AdminDashboard: React.FC = () => {
     const [systemHealth, setSystemHealth] = useState<any>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [isSearchVisible, setIsSearchVisible] = useState(false);
+
     const navigate = useNavigate();
 
     const handleLogout = () => {
@@ -169,7 +171,7 @@ const AdminDashboard: React.FC = () => {
                         </span>
                     </div>
                     <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center cursor-pointer hover:bg-slate-700 transition-colors">
-                        <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                        <svg className="w-4 h-4 text-slate-500 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
                     </div>
                 </div>
             </header>

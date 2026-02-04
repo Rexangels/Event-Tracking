@@ -284,12 +284,36 @@ class FormSubmissionViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         submission = serializer.save()
+        assignment = submission.assignment
         
-        # Propagate location to the main report and event
-        if submission.latitude and submission.longitude:
+        # If this is a General/Persistent assignment (no pre-existing report), create a report now
+        if not assignment.report:
             try:
-                assignment = submission.assignment
-                report = assignment.report
+                # Create a new HazardReport to hold this submission results
+                report = HazardReport.objects.create(
+                    form_template=assignment.inspection_form, # Use the inspection form as the template
+                    data=submission.data,
+                    latitude=submission.latitude,
+                    longitude=submission.longitude,
+                    status='resolved', # Officer submission typically resolves the issue
+                    priority='medium',
+                    reporter_name=f"Officer Patrol: {assignment.officer.username}"
+                )
+                # Link this submission to the newly created report (conceptually)
+                # Note: Currently OfficerAssignment links to Report, but in persistent mode, 
+                # we might want to track which report each submission created.
+                # For now, we propagate the location as if it were the assignment's report.
+                submission_report = report
+            except Exception as e:
+                print(f"Error creating report for persistent assignment: {e}")
+                submission_report = None
+        else:
+            submission_report = assignment.report
+
+        # Propagate location to the report and event
+        if submission.latitude and submission.longitude and submission_report:
+            try:
+                report = submission_report
                 
                 # Update Report Location
                 report.latitude = submission.latitude

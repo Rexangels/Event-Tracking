@@ -8,6 +8,7 @@ import PublicReportPage from './pages/PublicReportPage';
 import OfficerDashboard from './pages/OfficerDashboard';
 import { authService } from './services/authService';
 
+
 const ProtectedRoute = ({ children }: { children: React.ReactElement }) => {
   const isAuthenticated = authService.isAuthenticated();
   const location = useLocation();
