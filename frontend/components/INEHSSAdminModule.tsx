@@ -48,6 +48,9 @@ const INEHSSAdminModule: React.FC = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
+    const [reportSearch, setReportSearch] = useState('');
+    const [reportStatusFilter, setReportStatusFilter] = useState('all');
+    const [reportPriorityFilter, setReportPriorityFilter] = useState('all');
 
     // Form Builder State
     const [isFormBuilderOpen, setIsFormBuilderOpen] = useState(false);
@@ -336,6 +339,19 @@ const INEHSSAdminModule: React.FC = () => {
         return colors[status] || 'text-slate-400 bg-slate-500/20';
     };
 
+    const visibleReports = reports.filter((report) => {
+        const q = reportSearch.trim().toLowerCase();
+        const searchMatch = !q
+            || report.tracking_id.toLowerCase().includes(q)
+            || report.reporter_name?.toLowerCase().includes(q)
+            || report.address?.toLowerCase().includes(q)
+            || report.form_template?.name?.toLowerCase().includes(q);
+
+        const statusMatch = reportStatusFilter === 'all' || report.status === reportStatusFilter;
+        const priorityMatch = reportPriorityFilter === 'all' || report.priority === reportPriorityFilter;
+        return searchMatch && statusMatch && priorityMatch;
+    });
+
     const officerForms = forms.filter(f => f.form_type === 'officer');
 
     return (
@@ -486,10 +502,39 @@ const INEHSSAdminModule: React.FC = () => {
                     {/* Reports Tab */}
                     {activeTab === 'reports' && (
                         <div className="space-y-3">
-                            {reports.length === 0 ? (
-                                <div className="text-center py-12 text-slate-500">No reports yet</div>
+                            <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4 grid md:grid-cols-3 gap-3">
+                                <input
+                                    value={reportSearch}
+                                    onChange={(e) => setReportSearch(e.target.value)}
+                                    placeholder="Search tracking ID, reporter, address"
+                                    className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white"
+                                />
+                                <select
+                                    value={reportStatusFilter}
+                                    onChange={(e) => setReportStatusFilter(e.target.value)}
+                                    className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white"
+                                >
+                                    <option value="all">All statuses</option>
+                                    {['new', 'assigned', 'in_progress', 'resolved', 'closed'].map(status => (
+                                        <option key={status} value={status}>{status}</option>
+                                    ))}
+                                </select>
+                                <select
+                                    value={reportPriorityFilter}
+                                    onChange={(e) => setReportPriorityFilter(e.target.value)}
+                                    className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white"
+                                >
+                                    <option value="all">All priorities</option>
+                                    {['low', 'medium', 'high', 'critical'].map(priority => (
+                                        <option key={priority} value={priority}>{priority}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {visibleReports.length === 0 ? (
+                                <div className="text-center py-12 text-slate-500">No reports found for selected filters</div>
                             ) : (
-                                reports.map(report => (
+                                visibleReports.map(report => (
                                     <div
                                         key={report.id}
                                         className="bg-slate-800/50 border border-slate-700 rounded-xl p-4 hover:border-slate-600 transition-all"
