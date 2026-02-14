@@ -57,6 +57,19 @@ class HazardReportCreateSerializer(serializers.ModelSerializer):
             validated_data['ip_address'] = self.get_client_ip(request)
             validated_data['user_agent'] = request.META.get('HTTP_USER_AGENT', '')
         return super().create(validated_data)
+
+    def validate(self, attrs):
+        latitude = attrs.get('latitude')
+        longitude = attrs.get('longitude')
+
+        if latitude is not None and not -90 <= latitude <= 90:
+            raise serializers.ValidationError({'latitude': 'Latitude must be between -90 and 90.'})
+        if longitude is not None and not -180 <= longitude <= 180:
+            raise serializers.ValidationError({'longitude': 'Longitude must be between -180 and 180.'})
+        if (latitude is None) != (longitude is None):
+            raise serializers.ValidationError('Latitude and longitude must be provided together.')
+
+        return attrs
     
     def get_client_ip(self, request):
         x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
@@ -94,7 +107,8 @@ class OfficerAssignmentSerializer(serializers.ModelSerializer):
         model = OfficerAssignment
         fields = [
             'id', 'report', 'officer', 'officer_username', 'inspection_form',
-            'status', 'is_persistent', 'notes', 'assigned_at', 'due_date', 'completed_at',
+            'status', 'progress_percent', 'escalation_level', 'escalation_reason',
+            'is_persistent', 'notes', 'assigned_at', 'due_date', 'completed_at',
             'latest_draft', 'latest_submission', 'submission_count'
         ]
         read_only_fields = ['id', 'assigned_at', 'completed_at']
@@ -148,6 +162,19 @@ class FormSubmissionCreateSerializer(serializers.ModelSerializer):
         if request and request.user.is_authenticated:
             validated_data['submitted_by'] = request.user
         return super().create(validated_data)
+
+    def validate(self, attrs):
+        latitude = attrs.get('latitude')
+        longitude = attrs.get('longitude')
+
+        if latitude is not None and not -90 <= latitude <= 90:
+            raise serializers.ValidationError({'latitude': 'Latitude must be between -90 and 90.'})
+        if longitude is not None and not -180 <= longitude <= 180:
+            raise serializers.ValidationError({'longitude': 'Longitude must be between -180 and 180.'})
+        if (latitude is None) != (longitude is None):
+            raise serializers.ValidationError('Latitude and longitude must be provided together.')
+
+        return attrs
 
 
 class FormSubmissionSerializer(serializers.ModelSerializer):
