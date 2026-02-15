@@ -184,6 +184,11 @@ const DynamicFormRenderer: React.FC<DynamicFormRendererProps> = ({
                 );
 
             case 'file':
+                const selectedFile = formData[field.name] as File | undefined;
+                const previewUrl = selectedFile ? URL.createObjectURL(selectedFile) : null;
+                const isImage = !!selectedFile && selectedFile.type.startsWith('image/');
+                const isVideo = !!selectedFile && selectedFile.type.startsWith('video/');
+
                 return (
                     <div className="space-y-2">
                         <div className="flex gap-2">
@@ -212,10 +217,25 @@ const DynamicFormRenderer: React.FC<DynamicFormRendererProps> = ({
                                 Take Photo
                             </label>
                         </div>
-                        {formData[field.name] && (
-                            <div className="text-xs text-green-400 flex items-center gap-1">
-                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                                {(formData[field.name] as File).name}
+                        {selectedFile && (
+                            <div className="space-y-2">
+                                <div className="text-xs text-green-400 flex items-center gap-1">
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                    {selectedFile.name}
+                                </div>
+
+                                <div className="bg-slate-900 border border-slate-700 rounded-lg p-3">
+                                    <p className="text-[11px] text-slate-400 mb-2">Preview</p>
+                                    {isImage && previewUrl && (
+                                        <img src={previewUrl} alt="Evidence preview" className="max-h-48 rounded border border-slate-700" />
+                                    )}
+                                    {isVideo && previewUrl && (
+                                        <video src={previewUrl} controls className="max-h-56 rounded border border-slate-700" />
+                                    )}
+                                    {!isImage && !isVideo && (
+                                        <p className="text-xs text-slate-400">Document selected. Preview not available.</p>
+                                    )}
+                                </div>
                             </div>
                         )}
                     </div>

@@ -134,8 +134,20 @@ class OfficerAssignment(models.Model):
         ('pending', 'Pending'),
         ('accepted', 'Accepted'),
         ('in_progress', 'In Progress'),
+        ('awaiting_review', 'Awaiting Review'),
+        ('approved', 'Approved'),
+        ('revision_needed', 'Revision Needed'),
         ('completed', 'Completed'),
         ('declined', 'Declined'),
+        ('reassigned', 'Reassigned'),
+    ]
+
+    ESCALATION_LEVEL_CHOICES = [
+        ('none', 'None'),
+        ('low', 'Low'),
+        ('medium', 'Medium'),
+        ('high', 'High'),
+        ('critical', 'Critical'),
     ]
     
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -162,6 +174,9 @@ class OfficerAssignment(models.Model):
     )
     
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    progress_percent = models.PositiveSmallIntegerField(default=0)
+    escalation_level = models.CharField(max_length=20, choices=ESCALATION_LEVEL_CHOICES, default='none')
+    escalation_reason = models.TextField(blank=True)
     is_persistent = models.BooleanField(default=False, help_text="If true, assignment remains open for multiple submissions (Patrol Mode)")
     notes = models.TextField(blank=True, help_text="Admin notes for the officer")
     

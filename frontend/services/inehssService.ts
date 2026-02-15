@@ -50,10 +50,25 @@ export interface OfficerAssignment {
     officer_username: string;
     inspection_form: FormTemplate;
     status: string;
+    progress_percent?: number;
+    escalation_level?: 'none' | 'low' | 'medium' | 'high' | 'critical';
+    escalation_reason?: string;
     notes: string;
     assigned_at: string;
     due_date: string | null;
     completed_at: string | null;
+    is_persistent?: boolean;
+}
+
+export interface ReportFilters {
+    tracking_id?: string;
+    priority?: string;
+    status?: string;
+    search?: string;
+    min_lat?: number;
+    max_lat?: number;
+    min_lon?: number;
+    max_lon?: number;
 }
 
 // === Public API ===
@@ -105,6 +120,59 @@ export async function getMyAssignments(token: string): Promise<OfficerAssignment
         headers: { Authorization: `Bearer ${token}` }
     });
     return response.data;
+}
+
+export async function startAssignment(assignmentId: string, token: string): Promise<void> {
+    await axios.post(`${API_BASE}/assignments/${assignmentId}/start/`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+    });
+}
+
+export async function submitAssignmentForReview(assignmentId: string, token: string): Promise<void> {
+    await axios.post(`${API_BASE}/assignments/${assignmentId}/submit_review/`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+    });
+}
+
+export async function escalateAssignment(
+    assignmentId: string,
+    level: 'low' | 'medium' | 'high' | 'critical',
+    reason: string,
+    token: string
+): Promise<void> {
+    await axios.post(`${API_BASE}/assignments/${assignmentId}/escalate/`, { level, reason }, {
+        headers: { Authorization: `Bearer ${token}` }
+    });
+}
+
+export async function getReports(token: string, filters?: ReportFilters): Promise<HazardReport[]> {
+    const response = await axios.get(`${API_BASE}/reports/`, {
+        headers: { Authorization: `Bearer ${token}` },
+        params: filters,
+    });
+    const data = response.data;
+    return Array.isArray(data) ? data : (data?.results || []);
+}
+
+export async function approveAssignment(assignmentId: string, token: string): Promise<void> {
+    await axios.post(`${API_BASE}/assignments/${assignmentId}/approve/`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+    });
+}
+
+export async function requestAssignmentRevision(assignmentId: string, notes: string, token: string): Promise<void> {
+    await axios.post(`${API_BASE}/assignments/${assignmentId}/request_revision/`, { notes }, {
+        headers: { Authorization: `Bearer ${token}` }
+    });
+}
+
+export async function reassignAssignment(assignmentId: string, officerId: number, reason: string, token: string): Promise<void> {
+    await axios.post(`${API_BASE}/assignments/${assignmentId}/reassign/`, {
+        officer_id: officerId,
+        reason,
+    }, {
+        headers: { Authorization: `Bearer ${token}` }
+    });
 }
 
 export async function acceptAssignment(assignmentId: string, token: string): Promise<void> {

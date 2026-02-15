@@ -3,7 +3,6 @@ Authentication module - User roles and permissions for Sentinel
 """
 
 from django.contrib.auth.models import User, Group, Permission
-from django.contrib.contenttypes.models import ContentType
 from django.db import models
 
 
@@ -17,6 +16,8 @@ def setup_user_roles():
     admin_group, _ = Group.objects.get_or_create(name='Admin')
     officer_group, _ = Group.objects.get_or_create(name='Officer')
     public_group, _ = Group.objects.get_or_create(name='Public')
+    supervisor_group, _ = Group.objects.get_or_create(name='Supervisor')
+    analyst_group, _ = Group.objects.get_or_create(name='Analyst')
     
     # Get all permissions
     perms = {p.codename: p for p in Permission.objects.all()}
@@ -45,13 +46,33 @@ def setup_user_roles():
         'add_hazardreport', 'view_hazardreport',
     ]
     public_group.permissions.set([perms.get(p) for p in public_perms if p in perms])
+
+    # Supervisor: review + assignment governance
+    supervisor_perms = [
+        'view_hazardreport', 'change_hazardreport',
+        'view_officeerassignment', 'change_officeerassignment',
+        'view_formsubmission', 'change_formsubmission',
+        'view_auditlog'
+    ]
+    supervisor_group.permissions.set([perms.get(p) for p in supervisor_perms if p in perms])
+
+    # Analyst: read-only operational view
+    analyst_perms = [
+        'view_hazardreport',
+        'view_formsubmission',
+        'view_officeerassignment',
+        'view_auditlog',
+    ]
+    analyst_group.permissions.set([perms.get(p) for p in analyst_perms if p in perms])
     
-    print("✅ User roles created: Admin, Officer, Public")
+    print("✅ User roles created: Admin, Supervisor, Analyst, Officer, Public")
 
 
 class UserRole(models.TextChoices):
     """User role choices"""
     ADMIN = 'admin', 'Administrator'
+    SUPERVISOR = 'supervisor', 'Supervisor'
+    ANALYST = 'analyst', 'Analyst'
     OFFICER = 'officer', 'Field Officer'
     PUBLIC = 'public', 'Public User'
 

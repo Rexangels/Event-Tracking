@@ -5,11 +5,15 @@ import remarkGfm from 'remark-gfm';
 import { IntelligenceEvent } from '../types';
 import { startDeepDiveChat, sendDeepDiveMessage, DeepDiveResponse } from '../services/geminiService';
 import AnalyticGraph from './AnalyticGraph';
+import { Explainability } from '../services/ai/application/explainability';
+import { GuardrailAssessment } from '../services/ai/application/guardrails';
 
 interface Message {
     role: 'user' | 'agent';
     content: string;
+    explainability?: Explainability;
     graphData?: DeepDiveResponse['graphData'];
+    guardrails?: GuardrailAssessment;
 }
 
 interface DeepDiveChatProps {
@@ -100,7 +104,9 @@ const DeepDiveChat: React.FC<DeepDiveChatProps> = ({ events, onExport }) => {
             const agentMsg: Message = {
                 role: 'agent',
                 content: response.text,
-                graphData: response.graphData
+                explainability: response.explainability,
+                graphData: response.graphData,
+                guardrails: response.guardrails
             };
 
             // Extract exports
@@ -184,6 +190,51 @@ const DeepDiveChat: React.FC<DeepDiveChatProps> = ({ events, onExport }) => {
                                     type={m.graphData.type}
                                     title={m.graphData.title}
                                 />
+                            )}
+                            {m.role === 'agent' && m.guardrails && m.guardrails.warnings.length > 0 && (
+                                <div className="mt-3 p-3 bg-amber-500/10 border border-amber-500/30 rounded text-xs text-amber-200">
+                                    <p className="font-semibold uppercase tracking-wider text-[10px] mb-1">AI Guardrails</p>
+                                    <ul className="list-disc pl-4 space-y-1">
+                                        {m.guardrails.warnings.map((warning, idx) => <li key={idx}>{warning}</li>)}
+                                    </ul>
+                                </div>
+                            )}
+                            {m.role === 'agent' && m.explainability && (
+                                <details className="mt-3 rounded-lg border border-slate-700/80 bg-slate-950/60 p-3 text-xs text-slate-300">
+                                    <summary className="cursor-pointer font-semibold text-slate-200 flex items-center gap-2">
+                                        <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ${m.explainability.confidenceLabel === 'high' ? 'bg-emerald-500/20 text-emerald-300' : m.explainability.confidenceLabel === 'medium' ? 'bg-amber-500/20 text-amber-300' : 'bg-rose-500/20 text-rose-300'}`}>
+                                            Confidence: {m.explainability.confidenceLabel.toUpperCase()}
+                                        </span>
+                                        Why this answer?
+                                    </summary>
+
+                                    <div className="mt-3 grid md:grid-cols-2 gap-3">
+                                        <div>
+                                            <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1">Key factors</p>
+                                            <ul className="list-disc pl-4 space-y-1">
+                                                {m.explainability.keyFactors.length ? m.explainability.keyFactors.map((factor, idx) => <li key={idx}>{factor}</li>) : <li>No factors supplied</li>}
+                                            </ul>
+                                        </div>
+                                        <div>
+                                            <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1">Assumptions</p>
+                                            <ul className="list-disc pl-4 space-y-1">
+                                                {m.explainability.assumptions.length ? m.explainability.assumptions.map((assumption, idx) => <li key={idx}>{assumption}</li>) : <li>No assumptions supplied</li>}
+                                            </ul>
+                                        </div>
+                                        <div>
+                                            <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1">Counter indicators</p>
+                                            <ul className="list-disc pl-4 space-y-1">
+                                                {m.explainability.counterIndicators.length ? m.explainability.counterIndicators.map((counter, idx) => <li key={idx}>{counter}</li>) : <li>No counter indicators supplied</li>}
+                                            </ul>
+                                        </div>
+                                        <div>
+                                            <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1">Source refs</p>
+                                            <ul className="list-disc pl-4 space-y-1">
+                                                {m.explainability.sourceRefs.length ? m.explainability.sourceRefs.map((source, idx) => <li key={idx}>{source}</li>) : <li>No source refs supplied</li>}
+                                            </ul>
+                                        </div>
+                                    </div>
+                                </details>
                             )}
                         </div>
                     </div>

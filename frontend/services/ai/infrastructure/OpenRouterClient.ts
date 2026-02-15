@@ -1,5 +1,6 @@
 
-import { IAIProvider, AIResponse, AIRequestOptions } from "../domain/interfaces";
+import { IAIProvider, AIResponse, AIRequestOptions, ChatMessage } from "../domain/interfaces";
+import { parseExplainabilityBlock } from "../application/explainability";
 
 export class OpenRouterClient implements IAIProvider {
     private apiKey: string;
@@ -51,8 +52,12 @@ export class OpenRouterClient implements IAIProvider {
                 throw new Error("OpenRouter returned an empty or invalid response structure.");
             }
 
+            const content = data.choices[0].message?.content || "No content returned from agent.";
+            const { cleanText, explainability } = parseExplainabilityBlock(content);
+
             return {
-                content: data.choices[0].message?.content || "No content returned from agent.",
+                content: cleanText,
+                explainability,
                 usage: data.usage ? {
                     promptTokens: data.usage.prompt_tokens,
                     completionTokens: data.usage.completion_tokens,
@@ -119,8 +124,12 @@ export class OpenRouterClient implements IAIProvider {
             }
 
             const data = await response.json();
+            const content = data.choices[0].message?.content || "No content returned.";
+            const { cleanText, explainability } = parseExplainabilityBlock(content);
+
             return {
-                content: data.choices[0].message?.content || "No content returned.",
+                content: cleanText,
+                explainability,
                 usage: data.usage ? {
                     promptTokens: data.usage.prompt_tokens,
                     completionTokens: data.usage.completion_tokens,

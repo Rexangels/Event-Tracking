@@ -2,6 +2,8 @@
 import React, { useState, useEffect } from 'react';
 import { IntelligenceEvent } from '../types';
 import { intelligenceService } from '../services/ai/application/IntelligenceService';
+import { Explainability } from '../services/ai/application/explainability';
+import { GuardrailAssessment } from '../services/ai/application/guardrails';
 
 interface AIAgentPanelProps {
   selectedEvent: IntelligenceEvent | null;
@@ -9,14 +11,20 @@ interface AIAgentPanelProps {
 
 const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ selectedEvent }) => {
   const [explanation, setExplanation] = useState<string>("");
+  const [explainability, setExplainability] = useState<Explainability | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
+  const [guardrails, setGuardrails] = useState<GuardrailAssessment | null>(null);
 
   useEffect(() => {
     if (selectedEvent) {
       setLoading(true);
       setExplanation("");
-      intelligenceService.getEventExplanation(selectedEvent).then(res => {
-        setExplanation(res);
+      setExplainability(null);
+      setGuardrails(null);
+      intelligenceService.getEventExplanationDetailed(selectedEvent).then(res => {
+        setExplanation(res.explanation);
+        setExplainability(res.explainability || null);
+        setGuardrails(res.guardrails || null);
         setLoading(false);
       });
     }
@@ -66,6 +74,41 @@ const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ selectedEvent }) => {
             </div>
           )}
         </div>
+
+
+        {guardrails && guardrails.warnings.length > 0 && (
+          <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded text-xs text-amber-200 space-y-1">
+            <p className="font-semibold uppercase tracking-wider text-[10px]">AI Guardrails</p>
+            <ul className="list-disc pl-4 space-y-1">
+              {guardrails.warnings.map((warning, idx) => <li key={idx}>{warning}</li>)}
+            </ul>
+          </div>
+        )}
+        {explainability && (
+          <div>
+            <h4 className="text-[10px] uppercase font-bold text-slate-500 mb-2 tracking-widest">Why This Answer</h4>
+            <div className="p-3 bg-slate-900/50 rounded border border-slate-800 text-xs text-slate-300 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400 uppercase tracking-wider text-[10px]">Confidence</span>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${explainability.confidenceLabel === 'high' ? 'bg-emerald-500/20 text-emerald-300' : explainability.confidenceLabel === 'medium' ? 'bg-amber-500/20 text-amber-300' : 'bg-rose-500/20 text-rose-300'}`}>
+                  {explainability.confidenceLabel.toUpperCase()} {typeof explainability.confidenceScore === 'number' ? `(${Math.round(explainability.confidenceScore * 100)}%)` : ''}
+                </span>
+              </div>
+              <div>
+                <p className="text-slate-500 uppercase text-[10px] mb-1">Key factors</p>
+                <ul className="list-disc pl-4 space-y-1">
+                  {explainability.keyFactors.length ? explainability.keyFactors.map((factor, i) => <li key={i}>{factor}</li>) : <li>No factors provided.</li>}
+                </ul>
+              </div>
+              <div>
+                <p className="text-slate-500 uppercase text-[10px] mb-1">Assumptions</p>
+                <ul className="list-disc pl-4 space-y-1">
+                  {explainability.assumptions.length ? explainability.assumptions.map((assumption, i) => <li key={i}>{assumption}</li>) : <li>No assumptions provided.</li>}
+                </ul>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="p-3 bg-slate-900 border-t border-slate-800 flex items-center justify-between">

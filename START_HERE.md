@@ -1,5 +1,7 @@
 # ✅ IMPLEMENTATION COMPLETE - SUMMARY FOR YOU
 
+> **Note (MVP reconciliation):** For current demo status, use `MVP_SOURCE_OF_TRUTH.md` as the primary reference when this file conflicts with code.
+
 **Date**: February 3, 2026  
 **Status**: ✅ READY FOR DEMO  
 **Time Investment**: ~3 hours of implementation

@@ -8,6 +8,9 @@ import DynamicFormRenderer from '../components/DynamicFormRenderer';
 import {
     getMyAssignments,
     acceptAssignment,
+    startAssignment,
+    submitAssignmentForReview,
+    escalateAssignment,
     submitInspection,
     completeAssignment,
     uploadAttachment,
@@ -27,6 +30,11 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
     const [error, setError] = useState<string | null>(null);
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
     const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+    const [search, setSearch] = useState('');
+    const [statusFilter, setStatusFilter] = useState('all');
+    const [escalationModalAssignmentId, setEscalationModalAssignmentId] = useState<string | null>(null);
+    const [escalationLevel, setEscalationLevel] = useState<'low' | 'medium' | 'high' | 'critical'>('high');
+    const [escalationReason, setEscalationReason] = useState('');
 
     useEffect(() => {
         loadAssignments();
@@ -56,6 +64,48 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
             setTimeout(() => setSuccessMessage(null), 3000);
         } catch (err) {
             setError('Failed to accept assignment');
+        }
+    };
+
+    const handleStart = async (assignmentId: string) => {
+        try {
+            await startAssignment(assignmentId, authToken);
+            await loadAssignments();
+            setSuccessMessage('Assignment marked in progress.');
+            setTimeout(() => setSuccessMessage(null), 3000);
+        } catch {
+            setError('Failed to start assignment');
+        }
+    };
+
+    const handleSubmitForReview = async (assignmentId: string) => {
+        try {
+            await submitAssignmentForReview(assignmentId, authToken);
+            await loadAssignments();
+            setSuccessMessage('Assignment submitted for review.');
+            setTimeout(() => setSuccessMessage(null), 3000);
+        } catch {
+            setError('Failed to submit assignment for review');
+        }
+    };
+
+    const handleEscalateSubmit = async () => {
+        if (!escalationModalAssignmentId) return;
+        const reason = escalationReason.trim();
+        if (!reason) {
+            setError('Escalation reason is required');
+            return;
+        }
+        try {
+            await escalateAssignment(escalationModalAssignmentId, escalationLevel, reason, authToken);
+            await loadAssignments();
+            setSuccessMessage('Assignment escalated.');
+            setEscalationModalAssignmentId(null);
+            setEscalationReason('');
+            setEscalationLevel('high');
+            setTimeout(() => setSuccessMessage(null), 3000);
+        } catch {
+            setError('Failed to escalate assignment');
         }
     };
 
@@ -121,11 +171,36 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
             pending: 'bg-yellow-500/20 text-yellow-400',
             accepted: 'bg-blue-500/20 text-blue-400',
             in_progress: 'bg-purple-500/20 text-purple-400',
+            awaiting_review: 'bg-indigo-500/20 text-indigo-400',
+            approved: 'bg-emerald-500/20 text-emerald-400',
+            revision_needed: 'bg-orange-500/20 text-orange-400',
             completed: 'bg-green-500/20 text-green-400',
             declined: 'bg-red-500/20 text-red-400',
+            reassigned: 'bg-slate-500/20 text-slate-300',
         };
         return styles[status] || 'bg-slate-500/20 text-slate-400';
     };
+
+    const visibleAssignments = assignments.filter((assignment) => {
+        const statusMatch = statusFilter === 'all' || assignment.status === statusFilter;
+        const q = search.trim().toLowerCase();
+        const searchMatch = !q
+            || assignment.report?.tracking_id?.toLowerCase().includes(q)
+            || assignment.report?.address?.toLowerCase().includes(q)
+            || assignment.inspection_form?.name?.toLowerCase().includes(q)
+            || assignment.notes?.toLowerCase().includes(q);
+
+        return statusMatch && searchMatch;
+    });
+
+    const notifications = assignments
+        .filter((a) => (a.escalation_level && a.escalation_level !== 'none') || (a.due_date && new Date(a.due_date) < new Date() && a.status !== 'completed'))
+        .map((a) => ({
+            id: a.id,
+            message: a.escalation_level && a.escalation_level !== 'none'
+                ? `${a.report?.tracking_id || 'Assignment'} escalated: ${a.escalation_level.toUpperCase()}`
+                : `${a.report?.tracking_id || 'Assignment'} is overdue`,
+        }));
 
     if (selectedAssignment) {
         return (
@@ -257,7 +332,7 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
 
                 {/* Stats */}
                 <div className="grid grid-cols-4 gap-4 mb-8">
-                    {['pending', 'accepted', 'in_progress', 'completed'].map(status => (
+                    {['pending', 'accepted', 'in_progress', 'awaiting_review', 'completed'].map(status => (
                         <div key={status} className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
                             <p className="text-2xl font-bold text-white">
                                 {assignments.filter(a => a.status === status).length}
@@ -270,17 +345,48 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
                 {/* Assignments List */}
                 <h2 className="text-xl font-bold text-white mb-4">My Assignments</h2>
 
+                <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4 mb-4 space-y-3">
+                    <div className="grid md:grid-cols-2 gap-3">
+                        <input
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                            placeholder="Search by tracking ID, address, form, or notes"
+                            className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm"
+                        />
+                        <select
+                            value={statusFilter}
+                            onChange={(e) => setStatusFilter(e.target.value)}
+                            className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm"
+                        >
+                            <option value="all">All statuses</option>
+                            {['pending', 'accepted', 'in_progress', 'awaiting_review', 'revision_needed', 'approved', 'completed', 'declined'].map(s => (
+                                <option key={s} value={s}>{s.replace('_', ' ')}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {notifications.length > 0 && (
+                        <div className="space-y-2">
+                            {notifications.slice(0, 3).map(note => (
+                                <div key={note.id} className="text-xs text-yellow-300 bg-yellow-500/10 border border-yellow-500/30 rounded p-2">
+                                    ⚠️ {note.message}
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
                 {isLoading ? (
                     <div className="flex items-center justify-center h-32">
                         <div className="animate-spin w-8 h-8 border-4 border-green-500 border-t-transparent rounded-full" />
                     </div>
-                ) : assignments.length === 0 ? (
+                ) : visibleAssignments.length === 0 ? (
                     <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-12 text-center">
-                        <p className="text-slate-400">No assignments yet</p>
+                        <p className="text-slate-400">No assignments found for current filters</p>
                     </div>
                 ) : (
                     <div className="space-y-4">
-                        {assignments.map(assignment => (
+                        {visibleAssignments.map(assignment => (
                             <div
                                 key={assignment.id}
                                 className="bg-slate-800/50 border border-slate-700 hover:border-green-500/50 rounded-xl p-6 transition-all"
@@ -304,6 +410,20 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
                                             {assignment.report ? assignment.report.form_template.name : assignment.inspection_form.name}
                                         </p>
                                         <p className="text-sm text-slate-400 mt-1">{assignment.report?.address || 'Patrol: Multiple Locations'}</p>
+                                        <div className="mt-3">
+                                            <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
+                                                <span>Progress</span>
+                                                <span>{assignment.progress_percent || 0}%</span>
+                                            </div>
+                                            <div className="w-full h-2 bg-slate-700 rounded overflow-hidden">
+                                                <div className="h-full bg-emerald-500" style={{ width: `${assignment.progress_percent || 0}%` }} />
+                                            </div>
+                                        </div>
+                                        {assignment.escalation_level && assignment.escalation_level !== 'none' && (
+                                            <p className="text-xs text-orange-300 mt-2">
+                                                Escalated ({assignment.escalation_level.toUpperCase()}): {assignment.escalation_reason || 'No reason provided'}
+                                            </p>
+                                        )}
                                         {assignment.due_date && (
                                             <p className="text-xs text-yellow-400 mt-2">Due: {new Date(assignment.due_date).toLocaleDateString()}</p>
                                         )}
@@ -317,12 +437,36 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
                                                 Accept
                                             </button>
                                         )}
-                                        {['accepted', 'in_progress'].includes(assignment.status) && (
+                                        {assignment.status === 'accepted' && (
+                                            <button
+                                                onClick={() => handleStart(assignment.id)}
+                                                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm transition-all"
+                                            >
+                                                Start
+                                            </button>
+                                        )}
+                                        {['accepted', 'in_progress', 'revision_needed'].includes(assignment.status) && (
                                             <button
                                                 onClick={() => setSelectedAssignment(assignment)}
                                                 className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm transition-all"
                                             >
                                                 Start Inspection
+                                            </button>
+                                        )}
+                                        {['in_progress', 'revision_needed'].includes(assignment.status) && (
+                                            <button
+                                                onClick={() => handleSubmitForReview(assignment.id)}
+                                                className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-sm transition-all"
+                                            >
+                                                Submit for Review
+                                            </button>
+                                        )}
+                                        {['accepted', 'in_progress', 'revision_needed'].includes(assignment.status) && (
+                                            <button
+                                                onClick={() => setEscalationModalAssignmentId(assignment.id)}
+                                                className="px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-lg text-sm transition-all"
+                                            >
+                                                Escalate
                                             </button>
                                         )}
                                         {assignment.status === 'completed' && (
@@ -340,6 +484,57 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
                     </div>
                 )}
             </main>
+
+            {escalationModalAssignmentId && (
+                <div className="fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4">
+                    <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-xl p-5 space-y-4">
+                        <h3 className="text-lg font-semibold text-white">Escalate Assignment</h3>
+                        <p className="text-sm text-slate-400">Provide severity and reason for escalation.</p>
+
+                        <div>
+                            <label className="block text-xs text-slate-400 mb-1">Level</label>
+                            <select
+                                value={escalationLevel}
+                                onChange={(e) => setEscalationLevel(e.target.value as 'low' | 'medium' | 'high' | 'critical')}
+                                className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-white"
+                            >
+                                {['low', 'medium', 'high', 'critical'].map(level => (
+                                    <option key={level} value={level}>{level.toUpperCase()}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div>
+                            <label className="block text-xs text-slate-400 mb-1">Reason</label>
+                            <textarea
+                                value={escalationReason}
+                                onChange={(e) => setEscalationReason(e.target.value)}
+                                rows={4}
+                                className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-white"
+                                placeholder="Explain why this assignment needs escalation"
+                            />
+                        </div>
+
+                        <div className="flex justify-end gap-2">
+                            <button
+                                onClick={() => {
+                                    setEscalationModalAssignmentId(null);
+                                    setEscalationReason('');
+                                }}
+                                className="px-4 py-2 text-slate-300 hover:text-white"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleEscalateSubmit}
+                                className="px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-lg"
+                            >
+                                Escalate
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
