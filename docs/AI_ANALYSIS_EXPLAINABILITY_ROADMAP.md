@@ -72,4 +72,8 @@ This roadmap defines what to implement next so AI outputs are useful in real inc
 
 - ✅ **Phase A complete**: explainability metadata parsing + analyst-facing UI panels are live.
 - 🟡 **Phase C started**: client-side guardrails now flag low-confidence outputs, block high-impact recommendations without evidence references, and provide deterministic degraded-mode fallback messaging when the AI provider fails.
-- ⏭️ **Next priority**: Phase B backend auditability (persistent AI interaction logs + redaction + admin query views).
+
+- 🟡 **Phase B started**: backend AI interaction logging API is now in place with prompt redaction and role-restricted read access for governance review.
+- ⏭️ **Next priority**: expand audit filters/dashboard UX and wire frontend AI clients to persist logs automatically.
+
+- ⏭️ **Next pr

@@ -38,6 +38,12 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
     const [escalationReason, setEscalationReason] = useState('');
 
 
+    const [escalationModalAssignmentId, setEscalationModalAssignmentId] = useState<string | null>(null);
+    const [escalationLevel, setEscalationLevel] = useState<'low' | 'medium' | 'high' | 'critical'>('high');
+    const [escalationReason, setEscalationReason] = useState('');
+
+
+
     useEffect(() => {
         loadAssignments();
     }, []);
@@ -96,11 +102,17 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
         if (!escalationModalAssignmentId) return;
         const reason = escalationReason.trim();
 
+
+    const handleEscalateSubmit = async () => {
+        if (!escalationModalAssignmentId) return;
+        const reason = escalationReason.trim();
+
     const handleEscalate = async (assignmentId: string) => {
         const level = window.prompt('Escalation level (low, medium, high, critical):', 'high') as
             | 'low' | 'medium' | 'high' | 'critical' | null;
         if (!level) return;
         const reason = window.prompt('Escalation reason:');
+
 
         if (!reason) {
             setError('Escalation reason is required');
@@ -114,6 +126,7 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
             setEscalationModalAssignmentId(null);
             setEscalationReason('');
             setEscalationLevel('high');
+
 
 
         try {
@@ -481,6 +494,9 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
                                         )}
                                         {['accepted', 'in_progress', 'revision_needed'].includes(assignment.status) && (
                                             <button
+
+                                                onClick={() => setEscalationModalAssignmentId(assignment.id)}
+
 
                                                 onClick={() => setEscalationModalAssignmentId(assignment.id)}
 

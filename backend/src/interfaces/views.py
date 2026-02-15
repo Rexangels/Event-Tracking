@@ -12,11 +12,17 @@ import json
 from rest_framework import viewsets, permissions
 from rest_framework.authtoken.views import ObtainAuthToken
 from rest_framework.authtoken.models import Token
-from infrastructure.models import AuditLog
-from .serializers import AuditLogSerializer # Assuming AuditLogSerializer is in the same .serializers file
+from infrastructure.models import AuditLog, AIInteractionLog
+from .serializers import (
+    AuditLogSerializer,
+    AIInteractionLogSerializer,
+    AIInteractionLogCreateSerializer,
+)
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.throttling import ScopedRateThrottle
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiTypes
+
+from .ai_audit import redact_sensitive_text, normalize_explainability
 
 class EventReportCreateView(APIView):
     parser_classes = (MultiPartParser, FormParser)
@@ -181,6 +187,65 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = AuditLog.objects.all().order_by('-timestamp')
     serializer_class = AuditLogSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+
+
+class CanViewAIInteractionLogs(permissions.BasePermission):
+    """Allow access to AI audit logs for staff, admin, supervisor, and analyst roles."""
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        if user.is_staff:
+            return True
+
+        profile = getattr(user, 'profile', None)
+        role = getattr(profile, 'role', None)
+        return role in {'admin', 'supervisor', 'analyst'}
+
+
+class AIInteractionLogViewSet(viewsets.ModelViewSet):
+    """AI interaction audit endpoint.
+
+    - POST: authenticated clients can submit interaction logs (prompt is redacted server-side).
+    - GET: restricted to staff/admin/supervisor/analyst for governance review.
+    """
+
+    queryset = AIInteractionLog.objects.all().order_by('-created_at')
+    http_method_names = ['get', 'post', 'head', 'options']
+
+    def get_permissions(self):
+        if self.action == 'create':
+            return [permissions.IsAuthenticated()]
+        return [CanViewAIInteractionLogs()]
+
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return AIInteractionLogCreateSerializer
+        return AIInteractionLogSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        explainability = normalize_explainability(serializer.validated_data.get('explainability'))
+        prompt = redact_sensitive_text(serializer.validated_data.get('prompt_redacted', ''))
+        response_text = serializer.validated_data.get('response_text', '')
+
+        log = AIInteractionLog.objects.create(
+            user=request.user if request.user.is_authenticated else None,
+            provider=serializer.validated_data.get('provider', 'openrouter'),
+            model_name=serializer.validated_data.get('model_name', ''),
+            prompt_redacted=prompt,
+            response_text=response_text,
+            explainability=explainability,
+            confidence_label=explainability.get('confidence_label', ''),
+            confidence_score=explainability.get('confidence_score'),
+        )
+
+        return Response(AIInteractionLogSerializer(log).data, status=status.HTTP_201_CREATED)
+
 
 class CustomAuthToken(ObtainAuthToken):
     """

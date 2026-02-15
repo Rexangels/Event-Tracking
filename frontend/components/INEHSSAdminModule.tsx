@@ -73,6 +73,12 @@ const INEHSSAdminModule: React.FC = () => {
     const [reassignReason, setReassignReason] = useState('');
 
 
+    const [reassignModalAssignmentId, setReassignModalAssignmentId] = useState<string | null>(null);
+    const [reassignOfficerId, setReassignOfficerId] = useState('');
+    const [reassignReason, setReassignReason] = useState('');
+
+
+
     // Form Builder State
     const [isFormBuilderOpen, setIsFormBuilderOpen] = useState(false);
     const [editingForm, setEditingForm] = useState<FormTemplate | null>(null);
@@ -618,8 +624,9 @@ const INEHSSAdminModule: React.FC = () => {
                             </div>
 
 
+
                             {reports.length === 0 ? (
-=======
+
                             {visibleReports.length === 0 ? (
 
                                 <div className="text-center py-12 text-slate-500">No reports found for selected filters</div>
