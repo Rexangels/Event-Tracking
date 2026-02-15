@@ -80,6 +80,7 @@ class TestINEHSSWorkflow:
         assert assignment.progress_percent >= 25
         assert assignment.escalation_level == 'high'
 
+
     def test_assignment_reassign_flow(self):
         report = HazardReport.objects.create(
             form_template=self.public_form,
@@ -105,3 +106,4 @@ class TestINEHSSWorkflow:
         assert response.status_code == 200
         assert assignment.officer_id == new_officer.id
         assert assignment.status == 'reassigned'
+

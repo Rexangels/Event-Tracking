@@ -348,6 +348,7 @@ class OfficerAssignmentViewSet(viewsets.ModelViewSet):
         assignment.save()
         return Response({'status': 'Assignment escalated', 'level': level})
 
+
     @action(detail=True, methods=['post'])
     def reassign(self, request, pk=None):
         assignment = self.get_object()
@@ -373,6 +374,7 @@ class OfficerAssignmentViewSet(viewsets.ModelViewSet):
 
         serializer = self.get_serializer(assignment)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
     
     @action(detail=True, methods=['post'])
     def complete(self, request, pk=None):

@@ -57,11 +57,14 @@ This file is the **authoritative status** for the current demo/MVP and resolves 
 - S3/MinIO media storage.
 - Full enterprise monitoring and security hardening.
 
+
 ## AI analysis & explainability focus (next major track)
 
 - Add structured explainability metadata to AI responses (confidence, key factors, assumptions, source references).
-- Add UI "Why this answer?" panel + confidence badges for analyst/officer workflows.
-- ✅ Add AI interaction logging baseline for governance review (backend model + API + prompt redaction).
+- Add UI "Why this answer?" panel + confidence badges for analyst- ✅ Add AI interaction logging baseline for governance review (backend model + API + prompt redaction).
+
+- Add audit logging for AI interactions for governance review.
+
 - ✅ Add policy checks baseline for high-impact recommendations and low-confidence warnings (frontend guardrails + degraded-mode fallback).
 
 See: `docs/AI_ANALYSIS_EXPLAINABILITY_ROADMAP.md`.

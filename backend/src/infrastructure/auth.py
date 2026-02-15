@@ -53,8 +53,11 @@ def setup_user_roles():
         'view_hazardreport', 'change_hazardreport',
         'view_officeerassignment', 'change_officeerassignment',
         'view_formsubmission', 'change_formsubmission',
+
         'view_auditlog',
         'view_aiinteractionlog'
+
+
     ]
     supervisor_group.permissions.set([perms.get(p) for p in supervisor_perms if p in perms])
 
@@ -64,7 +67,9 @@ def setup_user_roles():
         'view_formsubmission',
         'view_officeerassignment',
         'view_auditlog',
+
         'view_aiinteractionlog',
+
     ]
     analyst_group.permissions.set([perms.get(p) for p in analyst_perms if p in perms])
     
