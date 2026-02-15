@@ -33,6 +33,11 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('all');
 
+    const [escalationModalAssignmentId, setEscalationModalAssignmentId] = useState<string | null>(null);
+    const [escalationLevel, setEscalationLevel] = useState<'low' | 'medium' | 'high' | 'critical'>('high');
+    const [escalationReason, setEscalationReason] = useState('');
+
+
     useEffect(() => {
         loadAssignments();
     }, []);
@@ -86,20 +91,36 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
         }
     };
 
+
+    const handleEscalateSubmit = async () => {
+        if (!escalationModalAssignmentId) return;
+        const reason = escalationReason.trim();
+
     const handleEscalate = async (assignmentId: string) => {
         const level = window.prompt('Escalation level (low, medium, high, critical):', 'high') as
             | 'low' | 'medium' | 'high' | 'critical' | null;
         if (!level) return;
         const reason = window.prompt('Escalation reason:');
+
         if (!reason) {
             setError('Escalation reason is required');
             return;
         }
 
         try {
+            await escalateAssignment(escalationModalAssignmentId, escalationLevel, reason, authToken);
+            await loadAssignments();
+            setSuccessMessage('Assignment escalated.');
+            setEscalationModalAssignmentId(null);
+            setEscalationReason('');
+            setEscalationLevel('high');
+
+
+        try {
             await escalateAssignment(assignmentId, level, reason, authToken);
             await loadAssignments();
             setSuccessMessage('Assignment escalated.');
+
             setTimeout(() => setSuccessMessage(null), 3000);
         } catch {
             setError('Failed to escalate assignment');
@@ -460,7 +481,11 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
                                         )}
                                         {['accepted', 'in_progress', 'revision_needed'].includes(assignment.status) && (
                                             <button
+
+                                                onClick={() => setEscalationModalAssignmentId(assignment.id)}
+
                                                 onClick={() => handleEscalate(assignment.id)}
+
                                                 className="px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-lg text-sm transition-all"
                                             >
                                                 Escalate
@@ -481,6 +506,57 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
                     </div>
                 )}
             </main>
+
+            {escalationModalAssignmentId && (
+                <div className="fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4">
+                    <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-xl p-5 space-y-4">
+                        <h3 className="text-lg font-semibold text-white">Escalate Assignment</h3>
+                        <p className="text-sm text-slate-400">Provide severity and reason for escalation.</p>
+
+                        <div>
+                            <label className="block text-xs text-slate-400 mb-1">Level</label>
+                            <select
+                                value={escalationLevel}
+                                onChange={(e) => setEscalationLevel(e.target.value as 'low' | 'medium' | 'high' | 'critical')}
+                                className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-white"
+                            >
+                                {['low', 'medium', 'high', 'critical'].map(level => (
+                                    <option key={level} value={level}>{level.toUpperCase()}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div>
+                            <label className="block text-xs text-slate-400 mb-1">Reason</label>
+                            <textarea
+                                value={escalationReason}
+                                onChange={(e) => setEscalationReason(e.target.value)}
+                                rows={4}
+                                className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-white"
+                                placeholder="Explain why this assignment needs escalation"
+                            />
+                        </div>
+
+                        <div className="flex justify-end gap-2">
+                            <button
+                                onClick={() => {
+                                    setEscalationModalAssignmentId(null);
+                                    setEscalationReason('');
+                                }}
+                                className="px-4 py-2 text-slate-300 hover:text-white"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleEscalateSubmit}
+                                className="px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-lg"
+                            >
+                                Escalate
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

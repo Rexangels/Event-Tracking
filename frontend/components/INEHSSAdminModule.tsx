@@ -4,18 +4,31 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { FormTemplate, FormField, acceptAssignment, submitInspection, completeAssignment } from '../services/inehssService';
+import {
+    FormTemplate,
+    FormField,
+    getReports,
+    approveAssignment,
+    requestAssignmentRevision,
+    reassignAssignment,
+} from '../services/inehssService';
 import Tooltip from './ui/Tooltip';
 
 interface HazardReportAdmin {
     id: string;
     tracking_id: string;
-    form_template: { name: string };
+    form_template: { id?: string; name: string };
     status: string;
     priority: string;
     address: string;
     reporter_name: string;
     created_at: string;
+    attachments?: Array<{
+        id: string;
+        file: string;
+        file_type: 'image' | 'video' | 'document';
+        original_filename: string;
+    }>;
 }
 
 interface Officer {
@@ -37,6 +50,9 @@ interface OfficerAssignment {
     submission_count?: number;
     due_date?: string;
     completed_at?: string;
+    escalation_level?: 'none' | 'low' | 'medium' | 'high' | 'critical';
+    escalation_reason?: string;
+    progress_percent?: number;
 }
 
 const INEHSSAdminModule: React.FC = () => {
@@ -51,6 +67,11 @@ const INEHSSAdminModule: React.FC = () => {
     const [reportSearch, setReportSearch] = useState('');
     const [reportStatusFilter, setReportStatusFilter] = useState('all');
     const [reportPriorityFilter, setReportPriorityFilter] = useState('all');
+
+    const [reassignModalAssignmentId, setReassignModalAssignmentId] = useState<string | null>(null);
+    const [reassignOfficerId, setReassignOfficerId] = useState('');
+    const [reassignReason, setReassignReason] = useState('');
+
 
     // Form Builder State
     const [isFormBuilderOpen, setIsFormBuilderOpen] = useState(false);
@@ -79,6 +100,13 @@ const INEHSSAdminModule: React.FC = () => {
         loadData();
     }, []);
 
+    useEffect(() => {
+        const timeout = setTimeout(() => {
+            loadReports();
+        }, 350);
+        return () => clearTimeout(timeout);
+    }, [reportSearch, reportStatusFilter, reportPriorityFilter]);
+
     const getToken = () => localStorage.getItem('authToken');
 
     const loadData = async () => {
@@ -99,11 +127,7 @@ const INEHSSAdminModule: React.FC = () => {
             const formsData = await formsRes.json();
             setForms(formsData.results || formsData);
 
-            // Load reports
-            const reportsRes = await fetch(`${API_BASE}/inehss/reports/`, { headers });
-            if (!reportsRes.ok) console.error('Reports error:', reportsRes.status);
-            const reportsData = await reportsRes.json();
-            setReports(reportsData.results || reportsData);
+            await loadReports();
 
             // Load officers (staff users)
             const officersRes = await fetch(`${API_BASE}/inehss/officers/`, { headers });
@@ -122,6 +146,22 @@ const INEHSSAdminModule: React.FC = () => {
             setError('Failed to load data');
         } finally {
             setIsLoading(false);
+        }
+    };
+
+    const loadReports = async () => {
+        const token = getToken();
+        if (!token) return;
+
+        try {
+            const reportsData = await getReports(token, {
+                search: reportSearch || undefined,
+                status: reportStatusFilter === 'all' ? undefined : reportStatusFilter,
+                priority: reportPriorityFilter === 'all' ? undefined : reportPriorityFilter,
+            });
+            setReports(reportsData as HazardReportAdmin[]);
+        } catch {
+            setReports([]);
         }
     };
 
@@ -354,6 +394,52 @@ const INEHSSAdminModule: React.FC = () => {
 
     const officerForms = forms.filter(f => f.form_type === 'officer');
 
+    const handleApproveAssignment = async (assignmentId: string) => {
+        const token = getToken();
+        if (!token) return;
+        try {
+            await approveAssignment(assignmentId, token);
+            showSuccess('Assignment approved');
+            await loadData();
+        } catch {
+            setError('Failed to approve assignment');
+        }
+    };
+
+    const handleRequestRevision = async (assignmentId: string) => {
+        const token = getToken();
+        if (!token) return;
+        const notes = window.prompt('Revision notes for officer:');
+        if (!notes) return;
+        try {
+            await requestAssignmentRevision(assignmentId, notes, token);
+            showSuccess('Revision requested');
+            await loadData();
+        } catch {
+            setError('Failed to request revision');
+        }
+    };
+
+    const handleReassign = async () => {
+        const token = getToken();
+        if (!token || !reassignModalAssignmentId) return;
+        if (!reassignOfficerId) {
+            setError('Select an officer to reassign');
+            return;
+        }
+
+        try {
+            await reassignAssignment(reassignModalAssignmentId, Number(reassignOfficerId), reassignReason, token);
+            showSuccess('Assignment reassigned');
+            setReassignModalAssignmentId(null);
+            setReassignOfficerId('');
+            setReassignReason('');
+            await loadData();
+        } catch {
+            setError('Failed to reassign assignment');
+        }
+    };
+
     return (
         <div className="h-full flex flex-col animate-in fade-in duration-500">
             {/* Header */}
@@ -531,7 +617,11 @@ const INEHSSAdminModule: React.FC = () => {
                                 </select>
                             </div>
 
+
+                            {reports.length === 0 ? (
+=======
                             {visibleReports.length === 0 ? (
+
                                 <div className="text-center py-12 text-slate-500">No reports found for selected filters</div>
                             ) : (
                                 visibleReports.map(report => (
@@ -552,6 +642,24 @@ const INEHSSAdminModule: React.FC = () => {
                                                 <p className="text-xs text-slate-600 mt-1">
                                                     {report.reporter_name || 'Anonymous'} • {new Date(report.created_at).toLocaleDateString()}
                                                 </p>
+                                                {report.attachments && report.attachments.length > 0 && (
+                                                    <div className="mt-3 border-t border-slate-700/50 pt-3">
+                                                        <p className="text-xs text-slate-500 mb-2">Evidence ({report.attachments.length})</p>
+                                                        <div className="flex gap-2 flex-wrap">
+                                                            {report.attachments.slice(0, 4).map(att => (
+                                                                <a
+                                                                    key={att.id}
+                                                                    href={att.file}
+                                                                    target="_blank"
+                                                                    rel="noreferrer"
+                                                                    className="px-2 py-1 text-[11px] rounded bg-slate-900 border border-slate-700 text-slate-300 hover:border-green-500/40"
+                                                                >
+                                                                    {att.file_type === 'image' ? '🖼️' : att.file_type === 'video' ? '🎥' : '📄'} {att.original_filename}
+                                                                </a>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
                                             {report.status === 'new' && (
                                                 <Tooltip
@@ -579,19 +687,21 @@ const INEHSSAdminModule: React.FC = () => {
                     {/* Assignments Tab */}
                     {activeTab === 'assignments' && (
                         <div className="bg-slate-800 rounded-xl overflow-hidden border border-slate-700">
-                            <div className="grid grid-cols-6 gap-4 p-4 border-b border-slate-700 bg-slate-800/50 text-xs text-slate-400 font-bold uppercase">
+                            <div className="grid grid-cols-8 gap-4 p-4 border-b border-slate-700 bg-slate-800/50 text-xs text-slate-400 font-bold uppercase">
                                 <div>Officer</div>
                                 <div>Report</div>
                                 <div>Form</div>
                                 <div>Status</div>
                                 <div>Submissions</div>
                                 <div>Assigned</div>
+                                <div>Progress</div>
+                                <div>Actions</div>
                             </div>
                             {assignments.length === 0 ? (
                                 <div className="p-8 text-center text-slate-500">No assignments found.</div>
                             ) : (
                                 assignments.map(assignment => (
-                                    <div key={assignment.id} className="grid grid-cols-6 gap-4 p-4 border-b border-slate-700/50 items-center text-sm text-slate-300">
+                                    <div key={assignment.id} className="grid grid-cols-8 gap-4 p-4 border-b border-slate-700/50 items-center text-sm text-slate-300">
                                         <div className="font-medium text-white">{assignment.officer_username}</div>
                                         <div>
                                             {assignment.report ? (
@@ -636,6 +746,26 @@ const INEHSSAdminModule: React.FC = () => {
                                                 </div>
                                             )}
                                         </div>
+                                        <div>
+                                            <div className="text-xs text-slate-400 mb-1">{assignment.progress_percent || 0}%</div>
+                                            <div className="w-full h-2 rounded bg-slate-700 overflow-hidden">
+                                                <div className="h-full bg-emerald-500" style={{ width: `${assignment.progress_percent || 0}%` }} />
+                                            </div>
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                            {['awaiting_review', 'revision_needed'].includes(assignment.status) && (
+                                                <button onClick={() => handleApproveAssignment(assignment.id)} className="text-xs px-2 py-1 rounded bg-emerald-700/60 hover:bg-emerald-600 text-white">Approve</button>
+                                            )}
+                                            {['awaiting_review', 'approved'].includes(assignment.status) && (
+                                                <button onClick={() => handleRequestRevision(assignment.id)} className="text-xs px-2 py-1 rounded bg-amber-700/60 hover:bg-amber-600 text-white">Revision</button>
+                                            )}
+                                            <button
+                                                onClick={() => setReassignModalAssignmentId(assignment.id)}
+                                                className="text-xs px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-white"
+                                            >
+                                                Reassign
+                                            </button>
+                                        </div>
                                     </div>
                                 ))
                             )}
@@ -672,6 +802,35 @@ const INEHSSAdminModule: React.FC = () => {
                             </div>
                         </div>
                     )}
+                </div>
+            )}
+
+            {reassignModalAssignmentId && (
+                <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+                    <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-xl p-5 space-y-3">
+                        <h3 className="text-white font-semibold">Reassign Assignment</h3>
+                        <select
+                            value={reassignOfficerId}
+                            onChange={(e) => setReassignOfficerId(e.target.value)}
+                            className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-white"
+                        >
+                            <option value="">Select officer</option>
+                            {officers.map(officer => (
+                                <option key={officer.id} value={officer.id}>{officer.username}</option>
+                            ))}
+                        </select>
+                        <textarea
+                            value={reassignReason}
+                            onChange={(e) => setReassignReason(e.target.value)}
+                            rows={3}
+                            className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-white"
+                            placeholder="Reason for reassignment"
+                        />
+                        <div className="flex justify-end gap-2">
+                            <button onClick={() => setReassignModalAssignmentId(null)} className="px-4 py-2 text-slate-300">Cancel</button>
+                            <button onClick={handleReassign} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded">Reassign</button>
+                        </div>
+                    </div>
                 </div>
             )}
 

@@ -79,3 +79,31 @@ class TestINEHSSWorkflow:
         assert assignment.status == 'in_progress'
         assert assignment.progress_percent >= 25
         assert assignment.escalation_level == 'high'
+
+
+    def test_assignment_reassign_flow(self):
+        report = HazardReport.objects.create(
+            form_template=self.public_form,
+            data={'summary': 'Waste discharge'},
+            reporter_name='Reporter',
+        )
+        assignment = OfficerAssignment.objects.create(
+            report=report,
+            officer=self.officer,
+            inspection_form=self.officer_form,
+            assigned_by=self.admin,
+        )
+        new_officer = User.objects.create_user(username='officer2', password='pass1234')
+
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post(
+            f'/api/v1/inehss/assignments/{assignment.id}/reassign/',
+            {'officer_id': new_officer.id, 'reason': 'Closer to incident location'},
+            format='json',
+        )
+
+        assignment.refresh_from_db()
+        assert response.status_code == 200
+        assert assignment.officer_id == new_officer.id
+        assert assignment.status == 'reassigned'
+

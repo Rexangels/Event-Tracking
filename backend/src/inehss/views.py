@@ -347,6 +347,34 @@ class OfficerAssignmentViewSet(viewsets.ModelViewSet):
         assignment.escalation_reason = reason
         assignment.save()
         return Response({'status': 'Assignment escalated', 'level': level})
+
+
+    @action(detail=True, methods=['post'])
+    def reassign(self, request, pk=None):
+        assignment = self.get_object()
+        if not request.user.is_staff:
+            return Response({'error': 'Only staff can reassign assignments'}, status=status.HTTP_403_FORBIDDEN)
+
+        new_officer_id = request.data.get('officer_id')
+        if not new_officer_id:
+            return Response({'error': 'officer_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            new_officer = User.objects.get(id=new_officer_id)
+        except User.DoesNotExist:
+            return Response({'error': 'Selected officer does not exist'}, status=status.HTTP_404_NOT_FOUND)
+
+        reason = request.data.get('reason', '').strip()
+
+        assignment.officer = new_officer
+        assignment.status = 'reassigned'
+        assignment.notes = f"{assignment.notes}\n[Reassigned] {reason}".strip() if reason else assignment.notes
+        assignment.escalation_level = assignment.escalation_level or 'none'
+        assignment.save()
+
+        serializer = self.get_serializer(assignment)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
     
     @action(detail=True, methods=['post'])
     def complete(self, request, pk=None):

@@ -154,6 +154,29 @@ export async function getReports(token: string, filters?: ReportFilters): Promis
     return Array.isArray(data) ? data : (data?.results || []);
 }
 
+
+export async function approveAssignment(assignmentId: string, token: string): Promise<void> {
+    await axios.post(`${API_BASE}/assignments/${assignmentId}/approve/`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+    });
+}
+
+export async function requestAssignmentRevision(assignmentId: string, notes: string, token: string): Promise<void> {
+    await axios.post(`${API_BASE}/assignments/${assignmentId}/request_revision/`, { notes }, {
+        headers: { Authorization: `Bearer ${token}` }
+    });
+}
+
+export async function reassignAssignment(assignmentId: string, officerId: number, reason: string, token: string): Promise<void> {
+    await axios.post(`${API_BASE}/assignments/${assignmentId}/reassign/`, {
+        officer_id: officerId,
+        reason,
+    }, {
+        headers: { Authorization: `Bearer ${token}` }
+    });
+}
+
+
 export async function acceptAssignment(assignmentId: string, token: string): Promise<void> {
     await axios.post(`${API_BASE}/assignments/${assignmentId}/accept/`, {}, {
         headers: { Authorization: `Bearer ${token}` }
