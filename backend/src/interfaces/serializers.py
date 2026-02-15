@@ -1,6 +1,6 @@
 
 from rest_framework import serializers
-from infrastructure.models import EventModel, MediaModel, AuditLog
+from infrastructure.models import EventModel, MediaModel, AuditLog, AIInteractionLog
 
 class MediaSerializer(serializers.ModelSerializer):
     class Meta:
@@ -29,3 +29,29 @@ class AuditLogSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
+
+
+class AIInteractionLogSerializer(serializers.ModelSerializer):
+    username = serializers.CharField(source='user.username', read_only=True)
+
+    class Meta:
+        model = AIInteractionLog
+        fields = [
+            'id',
+            'username',
+            'provider',
+            'model_name',
+            'prompt_redacted',
+            'response_text',
+            'explainability',
+            'confidence_label',
+            'confidence_score',
+            'created_at',
+        ]
+        read_only_fields = fields
+
+
+class AIInteractionLogCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AIInteractionLog
+        fields = ['provider', 'model_name', 'prompt_redacted', 'response_text', 'explainability']

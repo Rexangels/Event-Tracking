@@ -1,10 +1,11 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import EventReportCreateView, EventListAdminView, StatsSummaryView, AuditLogViewSet, CustomAuthToken, EventActionView, HealthCheckView
+from .views import EventReportCreateView, EventListAdminView, StatsSummaryView, AuditLogViewSet, AIInteractionLogViewSet, CustomAuthToken, EventActionView, HealthCheckView
 from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
 
 router = DefaultRouter()
 router.register(r'audit-logs', AuditLogViewSet, basename='audit-log')
+router.register(r'ai-interactions', AIInteractionLogViewSet, basename='ai-interaction-log')
 
 urlpatterns = [
     path('', include(router.urls)),

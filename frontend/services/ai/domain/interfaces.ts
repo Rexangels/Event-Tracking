@@ -1,8 +1,10 @@
 
 import { IntelligenceEvent } from "../../../types";
+import { Explainability } from "../application/explainability";
 
 export interface AIResponse {
     content: string;
+    explainability?: Explainability;
     usage?: {
         promptTokens: number;
         completionTokens: number;

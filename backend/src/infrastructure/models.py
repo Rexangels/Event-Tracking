@@ -75,3 +75,23 @@ class AuditLog(models.Model):
 
     def __str__(self):
         return f"{self.action} - {self.source} ({self.status})"
+
+
+class AIInteractionLog(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey('auth.User', on_delete=models.SET_NULL, null=True, blank=True, related_name='ai_interactions')
+    provider = models.CharField(max_length=100, default='openrouter')
+    model_name = models.CharField(max_length=150, blank=True)
+    prompt_redacted = models.TextField()
+    response_text = models.TextField()
+    explainability = models.JSONField(default=dict, blank=True)
+    confidence_label = models.CharField(max_length=20, blank=True)
+    confidence_score = models.FloatField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'ai_interaction_logs'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.provider}:{self.model_name or 'unknown'} ({self.created_at.isoformat()})"
