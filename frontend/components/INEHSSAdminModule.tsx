@@ -73,11 +73,6 @@ const INEHSSAdminModule: React.FC = () => {
     const [reassignReason, setReassignReason] = useState('');
 
 
-    const [reassignModalAssignmentId, setReassignModalAssignmentId] = useState<string | null>(null);
-    const [reassignOfficerId, setReassignOfficerId] = useState('');
-    const [reassignReason, setReassignReason] = useState('');
-
-
 
     // Form Builder State
     const [isFormBuilderOpen, setIsFormBuilderOpen] = useState(false);
@@ -625,10 +620,7 @@ const INEHSSAdminModule: React.FC = () => {
 
 
 
-                            {reports.length === 0 ? (
-
                             {visibleReports.length === 0 ? (
-
                                 <div className="text-center py-12 text-slate-500">No reports found for selected filters</div>
                             ) : (
                                 visibleReports.map(report => (
@@ -1194,8 +1186,8 @@ const INEHSSAdminModule: React.FC = () => {
                                 onClick={createAssignment}
                                 disabled={isSubmittingAssignment}
                                 className={`flex-1 py-3 rounded-lg font-medium transition-all ${isSubmittingAssignment
-                                        ? 'bg-purple-800 text-purple-300 cursor-not-allowed'
-                                        : 'bg-purple-600 hover:bg-purple-500 text-white'
+                                    ? 'bg-purple-800 text-purple-300 cursor-not-allowed'
+                                    : 'bg-purple-600 hover:bg-purple-500 text-white'
                                     }`}
                             >
                                 {isSubmittingAssignment ? 'Assigning...' : 'Assign'}

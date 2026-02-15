@@ -38,11 +38,6 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
     const [escalationReason, setEscalationReason] = useState('');
 
 
-    const [escalationModalAssignmentId, setEscalationModalAssignmentId] = useState<string | null>(null);
-    const [escalationLevel, setEscalationLevel] = useState<'low' | 'medium' | 'high' | 'critical'>('high');
-    const [escalationReason, setEscalationReason] = useState('');
-
-
 
     useEffect(() => {
         loadAssignments();
@@ -102,18 +97,6 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
         if (!escalationModalAssignmentId) return;
         const reason = escalationReason.trim();
 
-
-    const handleEscalateSubmit = async () => {
-        if (!escalationModalAssignmentId) return;
-        const reason = escalationReason.trim();
-
-    const handleEscalate = async (assignmentId: string) => {
-        const level = window.prompt('Escalation level (low, medium, high, critical):', 'high') as
-            | 'low' | 'medium' | 'high' | 'critical' | null;
-        if (!level) return;
-        const reason = window.prompt('Escalation reason:');
-
-
         if (!reason) {
             setError('Escalation reason is required');
             return;
@@ -126,14 +109,6 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
             setEscalationModalAssignmentId(null);
             setEscalationReason('');
             setEscalationLevel('high');
-
-
-
-        try {
-            await escalateAssignment(assignmentId, level, reason, authToken);
-            await loadAssignments();
-            setSuccessMessage('Assignment escalated.');
-
             setTimeout(() => setSuccessMessage(null), 3000);
         } catch {
             setError('Failed to escalate assignment');
@@ -494,14 +469,7 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
                                         )}
                                         {['accepted', 'in_progress', 'revision_needed'].includes(assignment.status) && (
                                             <button
-
                                                 onClick={() => setEscalationModalAssignmentId(assignment.id)}
-
-
-                                                onClick={() => setEscalationModalAssignmentId(assignment.id)}
-
-                                                onClick={() => handleEscalate(assignment.id)}
-
                                                 className="px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-lg text-sm transition-all"
                                             >
                                                 Escalate

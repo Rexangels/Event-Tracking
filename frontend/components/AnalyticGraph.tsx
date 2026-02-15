@@ -1,10 +1,26 @@
 
 import React, { useEffect, useRef } from 'react';
 import * as d3 from 'd3';
+import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+
+// Fix for default Leaflet icon missing in production builds
+import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
+import markerIcon from 'leaflet/dist/images/marker-icon.png';
+import markerShadow from 'leaflet/dist/images/marker-shadow.png';
+
+// @ts-ignore
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+    iconRetinaUrl: markerIcon2x,
+    iconUrl: markerIcon,
+    shadowUrl: markerShadow,
+});
 
 interface AnalyticGraphProps {
     data: any[];
-    type: 'bar' | 'line' | 'network' | 'table';
+    type: 'bar' | 'line' | 'network' | 'table' | 'map';
     title: string;
 }
 
@@ -12,6 +28,7 @@ const AnalyticGraph: React.FC<AnalyticGraphProps> = ({ data, type, title }) => {
     const svgRef = useRef<SVGSVGElement>(null);
 
     useEffect(() => {
+        if (type === 'map' || type === 'table') return;
         if (!svgRef.current || !data || data.length === 0) return;
 
         const svg = d3.select(svgRef.current);
@@ -192,6 +209,54 @@ const AnalyticGraph: React.FC<AnalyticGraphProps> = ({ data, type, title }) => {
                         </tbody>
                     </table>
                 </div>
+            </div>
+        );
+    }
+
+    if (type === 'map') {
+        // Calculate center based on markers
+        const center = data.length > 0
+            ? [
+                data.reduce((sum, d) => sum + (d.lat || 0), 0) / data.length,
+                data.reduce((sum, d) => sum + (d.lng || 0), 0) / data.length
+            ] as [number, number]
+            : [9.0820, 8.6753] as [number, number];
+
+        return (
+            <div className="w-full h-80 bg-slate-900 rounded-xl border border-slate-800 mt-4 relative overflow-hidden group z-0">
+                <div className="absolute top-4 left-4 z-[1000] flex flex-col gap-1">
+                    <h3 className="text-[10px] font-bold text-blue-400 uppercase tracking-widest bg-slate-950/80 px-2 py-1 rounded inline-block">
+                        {title}
+                    </h3>
+                </div>
+                <div className="absolute top-4 right-4 z-[1000]">
+                    <div className="px-2 py-0.5 rounded bg-blue-500/10 border border-blue-500/20 text-[10px] text-blue-400 font-mono">
+                        MAP_VIZ
+                    </div>
+                </div>
+                <MapContainer
+                    center={center}
+                    zoom={6}
+                    scrollWheelZoom={false}
+                    className="w-full h-full"
+                >
+                    <TileLayer
+                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    />
+                    {data.map((marker, i) => (
+                        <Marker
+                            key={i}
+                            position={[marker.lat, marker.lng]}
+                        >
+                            <Popup>
+                                <div className="text-xs font-sans">
+                                    {marker.label}
+                                </div>
+                            </Popup>
+                        </Marker>
+                    ))}
+                </MapContainer>
             </div>
         );
     }

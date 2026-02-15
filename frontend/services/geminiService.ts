@@ -8,7 +8,7 @@ export interface DeepDiveResponse {
   text: string;
   explainability?: Explainability;
   graphData?: {
-    type: 'bar' | 'line' | 'network';
+    type: 'bar' | 'line' | 'network' | 'map';
     data: any[];
     title: string;
   };
@@ -36,11 +36,22 @@ export const startDeepDiveChat = async (events: IntelligenceEvent[], preserveHis
   When providing a visual or graph, ALWAYS use this exact JSON format:
   [GRAPH_DATA]
   {
-    "type": "bar" | "line" | "network",
+    "type": "bar" | "line" | "network" | "map",
     "title": "Descriptive Chart Title",
     "data": [
       {"label": "Category A", "value": 10},
       {"label": "Category B", "value": 25}
+    ]
+  }
+  [/GRAPH_DATA]
+
+  For "map" type, protocol:
+  [GRAPH_DATA]
+  {
+    "type": "map",
+    "title": "Incident Location Analysis",
+    "data": [
+      {"lat": 9.0765, "lng": 7.3986, "label": "Incident A (Severity: HIGH)"}
     ]
   }
   [/GRAPH_DATA]
