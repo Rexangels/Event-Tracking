@@ -1,6 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import EventReportCreateView, EventListAdminView, StatsSummaryView, AuditLogViewSet, AIInteractionLogViewSet, CustomAuthToken, EventActionView, HealthCheckView
+from .views import EventReportCreateView, EventListAdminView, StatsSummaryView, AuditLogViewSet, AIInteractionLogViewSet, CustomAuthToken, EventActionView, HealthCheckView, GovernanceLedgerView, GovernanceTrustIndexView
 from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
 
 router = DefaultRouter()
@@ -15,6 +15,8 @@ urlpatterns = [
     path('admin/events/<uuid:pk>/<str:action>/', EventActionView.as_view(), name='event-action'),
     path('stats/summary/', StatsSummaryView.as_view(), name='stats-summary'),
     path('health/', HealthCheckView.as_view(), name='health-check'),
+    path('governance/ledger/', GovernanceLedgerView.as_view(), name='governance-ledger'),
+    path('governance/trust-index/', GovernanceTrustIndexView.as_view(), name='governance-trust-index'),
     # API Schema views
     path('schema/', SpectacularAPIView.as_view(), name='schema'),
     # Optional UI:

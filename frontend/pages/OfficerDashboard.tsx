@@ -29,7 +29,7 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
-    const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+    const [location, setLocation] = useState<{ latitude: number; longitude: number; accuracy?: number; source?: 'gps' | 'manual' | 'map'; capturedAt?: string } | null>(null);
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('all');
 
@@ -287,6 +287,7 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
                             isSubmitting={isSubmitting}
                             submitLabel="Submit Inspection Report"
                             onLocationChange={setLocation}
+                            requireLocation
                         />
                     </div>
                 </main>

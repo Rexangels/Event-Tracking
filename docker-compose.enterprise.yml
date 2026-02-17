@@ -1,0 +1,22 @@
+version: '3.9'
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    container_name: sentinel-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-event_tracking}
+      POSTGRES_USER: ${POSTGRES_USER:-event_tracking}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-event_tracking}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    container_name: sentinel-redis
+    ports:
+      - "6379:6379"
+
+volumes:
+  postgres_data:

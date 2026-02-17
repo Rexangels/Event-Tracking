@@ -183,10 +183,18 @@ export async function acceptAssignment(assignmentId: string, token: string): Pro
     });
 }
 
+export interface SubmissionLocation {
+    latitude: number;
+    longitude: number;
+    accuracy?: number;
+    source?: 'gps' | 'manual' | 'map';
+    capturedAt?: string;
+}
+
 export async function submitInspection(
     assignmentId: string,
     data: Record<string, any>,
-    location: { latitude: number; longitude: number } | null,
+    location: SubmissionLocation | null,
     isDraft: boolean,
     token: string
 ): Promise<any> {
@@ -195,6 +203,9 @@ export async function submitInspection(
         data,
         latitude: location?.latitude,
         longitude: location?.longitude,
+        location_accuracy_m: location?.accuracy,
+        location_source: location?.source || 'gps',
+        location_captured_at: location?.capturedAt,
         is_draft: isDraft,
     };
     const response = await axios.post(`${API_BASE}/submissions/`, payload, {

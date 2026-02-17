@@ -216,6 +216,9 @@ class FormSubmission(models.Model):
     # Location where inspection was conducted
     latitude = models.FloatField(null=True, blank=True)
     longitude = models.FloatField(null=True, blank=True)
+    location_accuracy_m = models.FloatField(null=True, blank=True)
+    location_source = models.CharField(max_length=30, blank=True)
+    location_captured_at = models.DateTimeField(null=True, blank=True)
     
     # Metadata
     submitted_by = models.ForeignKey(User, on_delete=models.CASCADE)

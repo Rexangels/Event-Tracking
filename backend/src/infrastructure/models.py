@@ -1,4 +1,7 @@
 from django.db import models
+from django.core.exceptions import ValidationError
+from django.utils import timezone
+import hashlib
 import uuid
 from domain.entities import EventSeverity, EventStatus
 
@@ -67,11 +70,37 @@ class AuditLog(models.Model):
     status = models.CharField(max_length=20)  # e.g., 'SUCCESS', 'FAILURE'
     details = models.TextField(blank=True, null=True)
     ip_address = models.GenericIPAddressField(null=True, blank=True)
+    prev_hash = models.CharField(max_length=64, editable=False, db_index=True, default='0' * 64)
+    entry_hash = models.CharField(max_length=64, editable=False, unique=True, db_index=True)
     timestamp = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         db_table = 'audit_logs'
         ordering = ['-timestamp']
+
+    def _build_hash(self) -> str:
+        payload = '|'.join([
+            str(self.id),
+            self.action or '',
+            self.source or '',
+            self.status or '',
+            self.details or '',
+            self.ip_address or '',
+            self.prev_hash or ('0' * 64),
+            timezone.now().isoformat(),
+        ])
+        return hashlib.sha256(payload.encode('utf-8')).hexdigest()
+
+    def save(self, *args, **kwargs):
+        if self.pk and AuditLog.objects.filter(pk=self.pk).exists():
+            raise ValidationError('AuditLog is append-only and cannot be modified.')
+
+        if not self.entry_hash:
+            previous_entry = AuditLog.objects.order_by('-timestamp').values('entry_hash').first()
+            self.prev_hash = previous_entry['entry_hash'] if previous_entry and previous_entry.get('entry_hash') else ('0' * 64)
+            self.entry_hash = self._build_hash()
+
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.action} - {self.source} ({self.status})"
