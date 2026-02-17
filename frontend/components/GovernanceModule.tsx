@@ -1,17 +1,24 @@
 
 import React, { useState, useEffect } from 'react';
 import { Badge } from './ui/Badge';
-import { governanceService, AuditLog } from '../services/governanceService';
+import { governanceService, AuditLog, GovernanceTrustIndex } from '../services/governanceService';
 
 const GovernanceModule: React.FC = () => {
   const [logs, setLogs] = useState<AuditLog[]>([]);
+  const [trustIndex, setTrustIndex] = useState<GovernanceTrustIndex | null>(null);
+  const [ledgerIntegrityOk, setLedgerIntegrityOk] = useState(true);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchLogs = async () => {
       try {
-        const data = await governanceService.getAuditLogs();
-        setLogs(data);
+        const [ledger, trust] = await Promise.all([
+          governanceService.getLedger(),
+          governanceService.getTrustIndex(),
+        ]);
+        setLogs(ledger.results || []);
+        setLedgerIntegrityOk(ledger.integrity_ok);
+        setTrustIndex(trust);
       } catch (error) {
         console.error("Failed to fetch audit logs:", error);
       } finally {
@@ -40,28 +47,28 @@ const GovernanceModule: React.FC = () => {
               <div>
                 <div className="flex justify-between text-[11px] mb-2">
                   <span className="text-slate-400">Data Integrity</span>
-                  <span className="text-emerald-500 font-mono">100%</span>
+                  <span className="text-emerald-500 font-mono">{(trustIndex?.data_integrity ?? 0).toFixed(1)}%</span>
                 </div>
                 <div className="w-full bg-slate-800 h-1.5 rounded-full">
-                  <div className="bg-emerald-500 h-full w-full shadow-[0_0_8px_#10b981]"></div>
+                  <div className="bg-emerald-500 h-full shadow-[0_0_8px_#10b981]" style={{ width: `${Math.min(100, Math.max(0, trustIndex?.data_integrity ?? 0))}%` }}></div>
                 </div>
               </div>
               <div>
                 <div className="flex justify-between text-[11px] mb-2">
                   <span className="text-slate-400">Source Verification</span>
-                  <span className="text-blue-500 font-mono">94%</span>
+                  <span className="text-blue-500 font-mono">{(trustIndex?.source_verification ?? 0).toFixed(1)}%</span>
                 </div>
                 <div className="w-full bg-slate-800 h-1.5 rounded-full">
-                  <div className="bg-blue-500 h-full w-[94%] shadow-[0_0_8px_#3b82f6]"></div>
+                  <div className="bg-blue-500 h-full shadow-[0_0_8px_#3b82f6]" style={{ width: `${Math.min(100, Math.max(0, trustIndex?.source_verification ?? 0))}%` }}></div>
                 </div>
               </div>
               <div>
                 <div className="flex justify-between text-[11px] mb-2">
                   <span className="text-slate-400">Audit Coverage</span>
-                  <span className="text-orange-500 font-mono">88%</span>
+                  <span className="text-orange-500 font-mono">{(trustIndex?.audit_coverage ?? 0).toFixed(1)}%</span>
                 </div>
                 <div className="w-full bg-slate-800 h-1.5 rounded-full">
-                  <div className="bg-orange-500 h-full w-[88%] shadow-[0_0_8px_#f97316]"></div>
+                  <div className="bg-orange-500 h-full shadow-[0_0_8px_#f97316]" style={{ width: `${Math.min(100, Math.max(0, trustIndex?.audit_coverage ?? 0))}%` }}></div>
                 </div>
               </div>
             </div>
@@ -91,7 +98,10 @@ const GovernanceModule: React.FC = () => {
           <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-2xl">
             <div className="p-4 bg-slate-800/50 border-b border-slate-800 flex justify-between items-center">
               <h2 className="text-sm font-bold text-white uppercase tracking-widest">Immutable System Ledger</h2>
-              <Badge variant="outline">Ledger_Sync_Active</Badge>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-slate-400 font-mono">logs:{trustIndex?.total_audit_logs ?? logs.length}</span>
+                <Badge variant="outline">{ledgerIntegrityOk ? 'Ledger_Integrity_OK' : 'Ledger_TAMPER_ALERT'}</Badge>
+              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-[11px] font-mono">
@@ -120,7 +130,7 @@ const GovernanceModule: React.FC = () => {
                   ))}
                   {logs.length === 0 && (
                     <tr>
-                      <td colSpan={5} className="text-center py-6 text-slate-500">No audit logs found. System initialization pending...</td>
+                      <td colSpan={5} className="text-center py-6 text-slate-500">No audit logs found yet. Submit/transition events to start the governance ledger.</td>
                     </tr>
                   )}
                 </tbody>

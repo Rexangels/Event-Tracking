@@ -154,7 +154,11 @@ class FormSubmissionCreateSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = FormSubmission
-        fields = ['id', 'assignment', 'data', 'latitude', 'longitude', 'is_draft']
+        fields = [
+            'id', 'assignment', 'data', 'latitude', 'longitude',
+            'location_accuracy_m', 'location_source', 'location_captured_at',
+            'is_draft'
+        ]
         read_only_fields = ['id']
     
     def create(self, validated_data):
@@ -166,6 +170,8 @@ class FormSubmissionCreateSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         latitude = attrs.get('latitude')
         longitude = attrs.get('longitude')
+        is_draft = attrs.get('is_draft', False)
+        location_accuracy = attrs.get('location_accuracy_m')
 
         if latitude is not None and not -90 <= latitude <= 90:
             raise serializers.ValidationError({'latitude': 'Latitude must be between -90 and 90.'})
@@ -173,6 +179,10 @@ class FormSubmissionCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'longitude': 'Longitude must be between -180 and 180.'})
         if (latitude is None) != (longitude is None):
             raise serializers.ValidationError('Latitude and longitude must be provided together.')
+        if not is_draft and (latitude is None or longitude is None):
+            raise serializers.ValidationError({'location': 'Live geolocation is required before submitting an inspection.'})
+        if location_accuracy is not None and location_accuracy < 0:
+            raise serializers.ValidationError({'location_accuracy_m': 'Location accuracy must be a positive number.'})
 
         return attrs
 
@@ -186,7 +196,7 @@ class FormSubmissionSerializer(serializers.ModelSerializer):
         model = FormSubmission
         fields = [
             'id', 'assignment', 'data',
-            'latitude', 'longitude',
+            'latitude', 'longitude', 'location_accuracy_m', 'location_source', 'location_captured_at',
             'submitted_by_username', 'submitted_at',
             'is_draft', 'attachments'
         ]

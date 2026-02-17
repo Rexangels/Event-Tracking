@@ -180,13 +180,38 @@ class StatsSummaryView(APIView):
                 f.write(traceback.format_exc())
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+
+
+class CanViewGovernanceLedger(permissions.BasePermission):
+    """Allow access to governance ledger for staff/admin/supervisor/analyst roles."""
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        if user.is_staff:
+            return True
+
+        profile = getattr(user, 'profile', None)
+        role = getattr(profile, 'role', None)
+        return role in {'admin', 'supervisor', 'analyst'}
+
+
+def _verify_audit_chain(logs):
+    previous_hash = '0' * 64
+    for log in logs:
+        if log.prev_hash != previous_hash:
+            return False
+        previous_hash = log.entry_hash
+    return True
+
 class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
     """
     Read-only API endpoint for governance audit logs.
     """
     queryset = AuditLog.objects.all().order_by('-timestamp')
     serializer_class = AuditLogSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [CanViewGovernanceLedger]
 
 
 
@@ -203,6 +228,8 @@ class CanViewAIInteractionLogs(permissions.BasePermission):
         profile = getattr(user, 'profile', None)
         role = getattr(profile, 'role', None)
         return role in {'admin', 'supervisor', 'analyst'}
+
+
 
 
 class AIInteractionLogViewSet(viewsets.ModelViewSet):
@@ -246,6 +273,53 @@ class AIInteractionLogViewSet(viewsets.ModelViewSet):
 
         return Response(AIInteractionLogSerializer(log).data, status=status.HTTP_201_CREATED)
 
+
+
+
+class GovernanceLedgerView(APIView):
+    """Governance ledger endpoint with integrity metadata."""
+
+    permission_classes = [CanViewGovernanceLedger]
+
+    def get(self, request, *args, **kwargs):
+        logs = AuditLog.objects.all().order_by('-timestamp')[:200]
+        serialized_logs = AuditLogSerializer(logs, many=True).data
+        integrity_ok = _verify_audit_chain(list(logs.order_by('timestamp'))) if serialized_logs else True
+        return Response({
+            'integrity_ok': integrity_ok,
+            'count': len(serialized_logs),
+            'results': serialized_logs,
+        })
+
+
+class GovernanceTrustIndexView(APIView):
+    """Governance trust metrics endpoint for dashboard scorecards."""
+
+    permission_classes = [CanViewGovernanceLedger]
+
+    def get(self, request, *args, **kwargs):
+        logs_asc = list(AuditLog.objects.all().order_by('timestamp'))
+        total_logs = len(logs_asc)
+        integrity_ok = _verify_audit_chain(logs_asc) if total_logs else True
+
+        success_logs = sum(1 for l in logs_asc if (l.status or '').upper() in {'SUCCESS', 'VERIFIED'})
+        source_verification = round((success_logs / total_logs) * 100, 1) if total_logs else 100.0
+
+        from infrastructure.models import EventModel
+        total_events = EventModel.objects.count()
+        event_with_location = EventModel.objects.filter(latitude__isnull=False, longitude__isnull=False).count()
+        data_integrity = round((event_with_location / total_events) * 100, 1) if total_events else 100.0
+
+        ai_interaction_count = AIInteractionLog.objects.count()
+        audit_coverage = round((ai_interaction_count / total_logs) * 100, 1) if total_logs else 0.0
+
+        return Response({
+            'data_integrity': data_integrity,
+            'source_verification': source_verification,
+            'audit_coverage': min(audit_coverage, 100.0),
+            'integrity_ok': integrity_ok,
+            'total_audit_logs': total_logs,
+        })
 
 class CustomAuthToken(ObtainAuthToken):
     """
