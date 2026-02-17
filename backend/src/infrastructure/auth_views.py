@@ -6,6 +6,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
+from infrastructure.permissions import IsAdminOrSupervisor
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth.models import User
@@ -82,12 +83,14 @@ class UserViewSet(viewsets.ModelViewSet):
     """User management endpoint"""
     queryset = User.objects.all()
     serializer_class = UserSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAdminOrSupervisor]
     
     def get_permissions(self):
         """Allow anyone to register"""
         if self.action == 'create':
             return [AllowAny()]
+        if self.action in ['me', 'logout']:
+            return [IsAuthenticated()]
         return super().get_permissions()
     
     def get_serializer_class(self):
@@ -111,7 +114,7 @@ class UserViewSet(viewsets.ModelViewSet):
 # Health Check View
 class HealthCheckView(viewsets.ViewSet):
     """System health status endpoint"""
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAdminOrSupervisor]
     
     def list(self, request):
         """Get system health status"""
@@ -125,7 +128,7 @@ class HealthCheckView(viewsets.ViewSet):
 # Events Endpoint for Admin
 class AdminEventsViewSet(viewsets.ViewSet):
     """Admin events endpoint - returns paginated events"""
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAdminOrSupervisor]
     
     def list(self, request):
         """Get all events (admin view)"""

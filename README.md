@@ -22,3 +22,10 @@ Leverage the **Google Agent Development Kit (ADK)** to perform cross-sector corr
     ```bash
     npm run dev
     ```
+
+
+## 🏢 Enterprise hardening
+
+- Environment-driven Postgres/PostGIS + Redis configuration is documented in `docs/ENTERPRISE_HARDENING_NEXT_STEPS.md`.
+- Use `docker-compose.enterprise.yml` to run local PostGIS/Redis dependencies.
+- Copy `.env.example` to `.env` and set enterprise flags before production-like runs.

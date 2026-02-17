@@ -8,6 +8,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle
 from rest_framework.views import APIView
+from infrastructure.auth import UserRole
 from django.db.models import Q
 
 from .models import FormTemplate, HazardReport, OfficerAssignment, FormSubmission, MediaAttachment
@@ -20,6 +21,18 @@ from .serializers import (
 )
 
 User = get_user_model()
+
+
+def _user_role(user):
+    return getattr(getattr(user, 'profile', None), 'role', None)
+
+
+def _is_admin_or_supervisor(user):
+    return bool(user and user.is_authenticated and (user.is_staff or user.is_superuser or _user_role(user) in {UserRole.ADMIN, UserRole.SUPERVISOR}))
+
+
+def _can_read_reports(user):
+    return bool(user and user.is_authenticated and (user.is_staff or user.is_superuser or _user_role(user) in {UserRole.ADMIN, UserRole.SUPERVISOR, UserRole.ANALYST, UserRole.OFFICER}))
 
 
 class OfficerListView(APIView):
@@ -165,7 +178,9 @@ class HazardReportViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action == 'create':
             return [permissions.AllowAny()]
-        return [permissions.IsAuthenticated()]
+        if _can_read_reports(self.request.user):
+            return [permissions.IsAuthenticated()]
+        return [permissions.IsAdminUser()]
     
     def get_throttles(self):
         if self.action == 'create':
@@ -258,6 +273,8 @@ class OfficerAssignmentViewSet(viewsets.ModelViewSet):
         return assignment.officer == request.user or request.user.is_staff
 
     def create(self, request, *args, **kwargs):
+        if not _is_admin_or_supervisor(request.user):
+            return Response({'error': 'Only admins/supervisors can create assignments'}, status=status.HTTP_403_FORBIDDEN)
         print("DEBUG: Creating assignment payload:", request.data)
         serializer = self.get_serializer(data=request.data)
         if not serializer.is_valid():
@@ -302,8 +319,8 @@ class OfficerAssignmentViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def request_revision(self, request, pk=None):
         assignment = self.get_object()
-        if not request.user.is_staff:
-            return Response({'error': 'Only staff can request revision'}, status=status.HTTP_403_FORBIDDEN)
+        if not _is_admin_or_supervisor(request.user):
+            return Response({'error': 'Only admins/supervisors can request revision'}, status=status.HTTP_403_FORBIDDEN)
         assignment.status = 'revision_needed'
         assignment.notes = request.data.get('notes', assignment.notes)
         assignment.progress_percent = min(assignment.progress_percent, 80)
@@ -313,8 +330,8 @@ class OfficerAssignmentViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def approve(self, request, pk=None):
         assignment = self.get_object()
-        if not request.user.is_staff:
-            return Response({'error': 'Only staff can approve'}, status=status.HTTP_403_FORBIDDEN)
+        if not _is_admin_or_supervisor(request.user):
+            return Response({'error': 'Only admins/supervisors can approve'}, status=status.HTTP_403_FORBIDDEN)
         assignment.status = 'approved'
         assignment.progress_percent = 100
         assignment.save()
@@ -352,8 +369,8 @@ class OfficerAssignmentViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def reassign(self, request, pk=None):
         assignment = self.get_object()
-        if not request.user.is_staff:
-            return Response({'error': 'Only staff can reassign assignments'}, status=status.HTTP_403_FORBIDDEN)
+        if not _is_admin_or_supervisor(request.user):
+            return Response({'error': 'Only admins/supervisors can reassign assignments'}, status=status.HTTP_403_FORBIDDEN)
 
         new_officer_id = request.data.get('officer_id')
         if not new_officer_id:

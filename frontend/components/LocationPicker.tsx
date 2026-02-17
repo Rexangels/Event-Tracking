@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -20,6 +20,8 @@ interface Location {
     latitude: number;
     longitude: number;
     address?: string;
+    accuracy?: number;
+    source?: 'gps' | 'manual' | 'map';
 }
 
 interface LocationPickerProps {
@@ -67,6 +69,7 @@ const LocationPicker: React.FC<LocationPickerProps> = ({ initialLocation, onLoca
     const [manualLat, setManualLat] = useState('');
     const [manualLng, setManualLng] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const [locationSource, setLocationSource] = useState<'gps' | 'manual' | 'map'>(initialLocation?.source || 'map');
 
     // Initial load
     useEffect(() => {
@@ -74,13 +77,15 @@ const LocationPicker: React.FC<LocationPickerProps> = ({ initialLocation, onLoca
             setPosition([initialLocation.latitude, initialLocation.longitude]);
             setManualLat(initialLocation.latitude.toString());
             setManualLng(initialLocation.longitude.toString());
+            setLocationSource(initialLocation.source || 'map');
         } else if (navigator.geolocation && !position) {
             // Auto-detect if no initial
             navigator.geolocation.getCurrentPosition(
                 (pos) => {
                     const newPos: [number, number] = [pos.coords.latitude, pos.coords.longitude];
+                    setLocationSource('gps');
                     setPosition(newPos);
-                    onLocationSelect({ latitude: newPos[0], longitude: newPos[1], address: 'Your Location' });
+                    onLocationSelect({ latitude: newPos[0], longitude: newPos[1], address: 'Your Location', accuracy: pos.coords.accuracy, source: 'gps' });
                 },
                 (err) => console.error("GPS Error:", err)
             );
@@ -94,11 +99,12 @@ const LocationPicker: React.FC<LocationPickerProps> = ({ initialLocation, onLoca
                 latitude: position[0],
                 longitude: position[1],
                 // We'll update address via search separately or leave generic
+                source: locationSource
             });
             setManualLat(position[0].toFixed(6));
             setManualLng(position[1].toFixed(6));
         }
-    }, [position]);
+    }, [position, locationSource]);
 
     const handleSearch = async () => {
         if (!searchQuery) return;
@@ -109,11 +115,13 @@ const LocationPicker: React.FC<LocationPickerProps> = ({ initialLocation, onLoca
             if (data && data.length > 0) {
                 const lat = parseFloat(data[0].lat);
                 const lon = parseFloat(data[0].lon);
+                setLocationSource('map');
                 setPosition([lat, lon]);
                 onLocationSelect({
                     latitude: lat,
                     longitude: lon,
-                    address: data[0].display_name
+                    address: data[0].display_name,
+                    source: 'map'
                 });
             }
         } catch (err) {
@@ -127,8 +135,9 @@ const LocationPicker: React.FC<LocationPickerProps> = ({ initialLocation, onLoca
         const lat = parseFloat(manualLat);
         const lng = parseFloat(manualLng);
         if (!isNaN(lat) && !isNaN(lng)) {
+            setLocationSource('manual');
             setPosition([lat, lng]);
-            onLocationSelect({ latitude: lat, longitude: lng });
+            onLocationSelect({ latitude: lat, longitude: lng, source: 'manual' });
         }
     };
 
@@ -142,6 +151,7 @@ const LocationPicker: React.FC<LocationPickerProps> = ({ initialLocation, onLoca
         navigator.geolocation.getCurrentPosition(
             (pos) => {
                 const newPos: [number, number] = [pos.coords.latitude, pos.coords.longitude];
+                setLocationSource('gps');
                 setPosition(newPos);
                 setManualLat(pos.coords.latitude.toString());
                 setManualLng(pos.coords.longitude.toString());
@@ -151,7 +161,9 @@ const LocationPicker: React.FC<LocationPickerProps> = ({ initialLocation, onLoca
                 onLocationSelect({
                     latitude: newPos[0],
                     longitude: newPos[1],
-                    address: 'Current Location'
+                    address: 'Current Location',
+                    accuracy: pos.coords.accuracy,
+                    source: 'gps'
                 });
                 setIsLoading(false);
             },
