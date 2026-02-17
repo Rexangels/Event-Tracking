@@ -107,3 +107,64 @@ class TestINEHSSWorkflow:
         assert assignment.officer_id == new_officer.id
         assert assignment.status == 'reassigned'
 
+
+
+    def test_officer_submission_requires_geolocation_for_final_submit(self):
+        report = HazardReport.objects.create(
+            form_template=self.public_form,
+            data={'summary': 'Illegal discharge'},
+            reporter_name='Reporter',
+        )
+        assignment = OfficerAssignment.objects.create(
+            report=report,
+            officer=self.officer,
+            inspection_form=self.officer_form,
+            assigned_by=self.admin,
+        )
+
+        self.client.force_authenticate(user=self.officer)
+        response = self.client.post(
+            '/api/v1/inehss/submissions/',
+            {
+                'assignment': str(assignment.id),
+                'data': {'notes': 'Inspection completed'},
+                'is_draft': False,
+            },
+            format='json',
+        )
+
+        assert response.status_code == 400
+        assert 'location' in response.data
+
+    def test_officer_submission_persists_geolocation_metadata(self):
+        report = HazardReport.objects.create(
+            form_template=self.public_form,
+            data={'summary': 'Illegal burn site'},
+            reporter_name='Reporter',
+        )
+        assignment = OfficerAssignment.objects.create(
+            report=report,
+            officer=self.officer,
+            inspection_form=self.officer_form,
+            assigned_by=self.admin,
+        )
+
+        self.client.force_authenticate(user=self.officer)
+        response = self.client.post(
+            '/api/v1/inehss/submissions/',
+            {
+                'assignment': str(assignment.id),
+                'data': {'notes': 'Inspection completed'},
+                'latitude': 6.5244,
+                'longitude': 3.3792,
+                'location_accuracy_m': 12.7,
+                'location_source': 'gps',
+                'location_captured_at': '2026-02-03T10:20:30Z',
+                'is_draft': False,
+            },
+            format='json',
+        )
+
+        assert response.status_code == 201
+        assert response.data['location_accuracy_m'] == 12.7
+        assert response.data['location_source'] == 'gps'

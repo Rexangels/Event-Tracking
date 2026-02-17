@@ -22,6 +22,13 @@ load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
+ENVIRONMENT = os.getenv('ENVIRONMENT', 'development').lower()
+
+
+def env_bool(name: str, default: bool = False) -> bool:
+    return os.getenv(name, str(default)).strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
@@ -29,7 +36,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-change-me-in-production')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv('DEBUG', 'True').lower() == 'true'
+DEBUG = env_bool('DEBUG', ENVIRONMENT != 'production')
 
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
@@ -56,13 +63,25 @@ INSTALLED_APPS = [
 # Django Channels configuration
 ASGI_APPLICATION = 'config.asgi.application'
 
-# Channel layer - using in-memory for demo
-# For production, use Redis: channels_redis.core.RedisChannelLayer
-CHANNEL_LAYERS = {
-    'default': {
-        'BACKEND': 'channels.layers.InMemoryChannelLayer'
+# Channel layer - Redis in production, in-memory fallback for local development
+REDIS_URL = os.getenv('REDIS_URL', 'redis://127.0.0.1:6379/0')
+USE_REDIS_CHANNEL_LAYER = env_bool('USE_REDIS_CHANNEL_LAYER', ENVIRONMENT == 'production')
+
+if USE_REDIS_CHANNEL_LAYER:
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels_redis.core.RedisChannelLayer',
+            'CONFIG': {
+                'hosts': [REDIS_URL],
+            },
+        }
     }
-}
+else:
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels.layers.InMemoryChannelLayer'
+        }
+    }
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
@@ -96,16 +115,28 @@ WSGI_APPLICATION = 'config.wsgi.application'
 
 
 # Database
-# https://docs.djangoproject.com/en/6.0/ref/settings/#databases
-# Using SQLite for development/demo
-# Note: For production with 10k+ events, migrate to PostgreSQL + PostGIS
+# SQLite default for local dev, PostgreSQL/PostGIS for enterprise deployments
+DB_ENGINE = os.getenv('DB_ENGINE', 'sqlite').lower()
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+if DB_ENGINE in {'postgres', 'postgis'}:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.contrib.gis.db.backends.postgis' if DB_ENGINE == 'postgis' else 'django.db.backends.postgresql',
+            'NAME': os.getenv('POSTGRES_DB', 'event_tracking'),
+            'USER': os.getenv('POSTGRES_USER', 'event_tracking'),
+            'PASSWORD': os.getenv('POSTGRES_PASSWORD', 'event_tracking'),
+            'HOST': os.getenv('POSTGRES_HOST', '127.0.0.1'),
+            'PORT': os.getenv('POSTGRES_PORT', '5432'),
+            'CONN_MAX_AGE': int(os.getenv('POSTGRES_CONN_MAX_AGE', '60')),
+        }
     }
-}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
 
 
 # Password validation
@@ -195,8 +226,8 @@ SPECTACULAR_SETTINGS = {
 
 # JWT Configuration (Simple JWT)
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=int(os.getenv('JWT_ACCESS_MINUTES', '60'))),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=int(os.getenv('JWT_REFRESH_DAYS', '7'))),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': False,
     'ALGORITHM': 'HS256',
@@ -227,6 +258,9 @@ LOGGING = {
 
 # Security Headers
 SECURE_BROWSER_XSS_FILTER = True
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+SESSION_COOKIE_SECURE = env_bool('SESSION_COOKIE_SECURE', ENVIRONMENT == 'production')
+CSRF_COOKIE_SECURE = env_bool('CSRF_COOKIE_SECURE', ENVIRONMENT == 'production')
 SECURE_CONTENT_SECURITY_POLICY = {
     'default-src': ("'self'",),
 }

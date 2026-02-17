@@ -15,7 +15,8 @@ interface DynamicFormRendererProps {
     isSubmitting?: boolean;
     submitLabel?: string;
     showGpsField?: boolean;
-    onLocationChange?: (location: { latitude: number; longitude: number }) => void;
+    onLocationChange?: (location: { latitude: number; longitude: number; accuracy?: number; source?: 'gps' | 'manual' | 'map'; capturedAt?: string }) => void;
+    requireLocation?: boolean;
     onSaveDraft?: (data: Record<string, any>) => void;
 }
 
@@ -27,7 +28,8 @@ const DynamicFormRenderer: React.FC<DynamicFormRendererProps> = ({
     submitLabel = 'Submit Report',
     showGpsField = true,
     onLocationChange,
-    onSaveDraft
+    onSaveDraft,
+    requireLocation = false
 }) => {
     const [formData, setFormData] = useState<Record<string, any>>(initialData);
     const [errors, setErrors] = useState<Record<string, string>>({});
@@ -38,8 +40,9 @@ const DynamicFormRenderer: React.FC<DynamicFormRendererProps> = ({
             setFormData(initialData);
         }
     }, [initialData]);
-    const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+    const [location, setLocation] = useState<{ latitude: number; longitude: number; accuracy?: number; source?: 'gps' | 'manual' | 'map'; capturedAt?: string } | null>(null);
     const [gettingLocation, setGettingLocation] = useState(false);
+    const [locationError, setLocationError] = useState<string | null>(null);
 
     // Auto-detect GPS on mount
     useEffect(() => {
@@ -49,17 +52,26 @@ const DynamicFormRenderer: React.FC<DynamicFormRendererProps> = ({
                 (position) => {
                     const loc = {
                         latitude: position.coords.latitude,
-                        longitude: position.coords.longitude
+                        longitude: position.coords.longitude,
+                        accuracy: position.coords.accuracy,
+                        source: 'gps' as const,
+                        capturedAt: new Date().toISOString()
                     };
                     setLocation(loc);
                     onLocationChange?.(loc);
+                    setLocationError(null);
                     setGettingLocation(false);
                 },
-                () => setGettingLocation(false),
+                () => {
+                    setGettingLocation(false);
+                    if (requireLocation) {
+                        setLocationError('Live GPS could not be retrieved. Use map pin/manual coordinates before submission.');
+                    }
+                },
                 { enableHighAccuracy: true }
             );
         }
-    }, [showGpsField, onLocationChange]);
+    }, [showGpsField, onLocationChange, requireLocation]);
 
     const handleChange = (fieldName: string, value: any) => {
         setFormData(prev => ({ ...prev, [fieldName]: value }));
@@ -81,6 +93,11 @@ const DynamicFormRenderer: React.FC<DynamicFormRendererProps> = ({
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+        if (requireLocation && !location) {
+            setLocationError('Incident geolocation is required to submit this form.');
+            return;
+        }
+
         if (validate()) {
             onSubmit(formData);
         }
@@ -266,10 +283,14 @@ const DynamicFormRenderer: React.FC<DynamicFormRendererProps> = ({
                     <LocationPicker
                         initialLocation={location}
                         onLocationSelect={(loc) => {
-                            setLocation(loc);
-                            onLocationChange?.(loc);
+                            const enrichedLoc = { ...loc, capturedAt: new Date().toISOString() };
+                            setLocation(enrichedLoc);
+                            onLocationChange?.(enrichedLoc);
+                            setLocationError(null);
                         }}
                     />
+                {locationError && <p className="text-xs text-red-400 mt-2">{locationError}</p>}
+                    {gettingLocation && <p className="text-xs text-slate-400 mt-2">Fetching device GPS…</p>}
                 </div>
             )}
 

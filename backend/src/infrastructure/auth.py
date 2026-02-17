@@ -26,7 +26,7 @@ def setup_user_roles():
     admin_perms = [
         'add_hazardreport', 'change_hazardreport', 'delete_hazardreport', 'view_hazardreport',
         'add_formtemplate', 'change_formtemplate', 'delete_formtemplate', 'view_formtemplate',
-        'add_officeerassignment', 'change_officeerassignment', 'delete_officeerassignment', 'view_officeerassignment',
+        'add_officerassignment', 'change_officerassignment', 'delete_officerassignment', 'view_officerassignment',
         'add_formsubmission', 'change_formsubmission', 'delete_formsubmission', 'view_formsubmission',
         'add_user', 'change_user', 'delete_user', 'view_user',
         'view_aiinteractionlog',
@@ -36,7 +36,7 @@ def setup_user_roles():
     # Officer: can view and update reports, submit forms
     officer_perms = [
         'view_hazardreport', 'change_hazardreport',
-        'view_officeerassignment', 'change_officeerassignment',
+        'view_officerassignment', 'change_officerassignment',
         'add_formsubmission', 'change_formsubmission', 'view_formsubmission',
         'view_formtemplate',
     ]
@@ -51,7 +51,7 @@ def setup_user_roles():
     # Supervisor: review + assignment governance
     supervisor_perms = [
         'view_hazardreport', 'change_hazardreport',
-        'view_officeerassignment', 'change_officeerassignment',
+        'view_officerassignment', 'change_officerassignment',
         'view_formsubmission', 'change_formsubmission',
 
         'view_auditlog',
@@ -65,7 +65,7 @@ def setup_user_roles():
     analyst_perms = [
         'view_hazardreport',
         'view_formsubmission',
-        'view_officeerassignment',
+        'view_officerassignment',
         'view_auditlog',
 
         'view_aiinteractionlog',
