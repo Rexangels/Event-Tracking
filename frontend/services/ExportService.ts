@@ -5,6 +5,8 @@ export interface ExportFile {
     name: string;
     type: 'pdf' | 'csv' | 'json';
     data: string;
+
+
 }
 
 export class ExportService {
@@ -73,7 +75,7 @@ export class ExportService {
                 type: "Feature",
                 geometry: {
                     type: "Point",
-                    coordinates: [0, 0] // In a real app, we'd use real lat/lng
+                    coordinates: [e.coords?.lng ?? 0, e.coords?.lat ?? 0]
                 },
                 properties: {
                     title: e.title,
@@ -89,4 +91,33 @@ export class ExportService {
             data: JSON.stringify(geojson, null, 2)
         };
     }
+
+    static generateMediaEvidenceBundle(events: IntelligenceEvent[]): ExportFile {
+        const records = events
+            .flatMap((event) => (event.media_attachments || []).map((media) => ({
+                event_id: event.id,
+                event_title: event.title,
+                event_location: event.location,
+                severity: event.severity,
+                media_id: media.id,
+                media_type: media.file_type,
+                media_url: media.file,
+                media_hash: media.file_hash,
+                captured_at: media.created_at,
+            })));
+
+        const payload = {
+            generated_at: new Date().toISOString(),
+            total_events: events.length,
+            total_media_assets: records.length,
+            records,
+        };
+
+        return {
+            name: `Media_Evidence_Bundle_${new Date().getTime()}.json`,
+            type: 'json',
+            data: JSON.stringify(payload, null, 2),
+        };
+    }
+
 }
