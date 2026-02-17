@@ -132,6 +132,40 @@ const LocationPicker: React.FC<LocationPickerProps> = ({ initialLocation, onLoca
         }
     };
 
+    const handleGetCurrentLocation = () => {
+        if (!navigator.geolocation) {
+            alert('Geolocation is not supported by your browser');
+            return;
+        }
+
+        setIsLoading(true);
+        navigator.geolocation.getCurrentPosition(
+            (pos) => {
+                const newPos: [number, number] = [pos.coords.latitude, pos.coords.longitude];
+                setPosition(newPos);
+                setManualLat(pos.coords.latitude.toString());
+                setManualLng(pos.coords.longitude.toString());
+
+                // Do reverse geocoding to get address if possible, or just set coords
+                // For now, let's just set coords and let the user see it
+                onLocationSelect({
+                    latitude: newPos[0],
+                    longitude: newPos[1],
+                    address: 'Current Location'
+                });
+                setIsLoading(false);
+            },
+            (err) => {
+                console.error("GPS Error:", err);
+                setIsLoading(false);
+                // Fail silently or show a non-intrusive toast if we had one, 
+                // but user asked for "not error is visible", so we'll just log for now
+                // or maybe set a fallback/default if it's critical.
+            },
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        );
+    };
+
     return (
         <div className="space-y-4">
             {/* Mode Toggle */}
@@ -147,6 +181,24 @@ const LocationPicker: React.FC<LocationPickerProps> = ({ initialLocation, onLoca
 
             {isManualEntry ? (
                 <div className="grid grid-cols-2 gap-4 bg-slate-800 p-4 rounded-lg border border-slate-700">
+                    <div className="col-span-2 mb-2">
+                        <button
+                            type="button"
+                            onClick={handleGetCurrentLocation}
+                            disabled={isLoading}
+                            className="w-full flex items-center justify-center gap-2 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors disabled:opacity-50"
+                        >
+                            {isLoading ? (
+                                <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
+                            ) : (
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
+                            )}
+                            Get Current Location
+                        </button>
+                    </div>
                     <div>
                         <label className="block text-xs text-slate-400 mb-1">Latitude</label>
                         <input
@@ -194,6 +246,19 @@ const LocationPicker: React.FC<LocationPickerProps> = ({ initialLocation, onLoca
                             className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors disabled:opacity-50"
                         >
                             {isLoading ? '...' : 'Search'}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleGetCurrentLocation}
+                            disabled={isLoading}
+                            title="Use Current Location"
+                            className="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors disabled:opacity-50"
+                        >
+                            {/* Target Icon */}
+                            <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
                         </button>
                     </div>
 
