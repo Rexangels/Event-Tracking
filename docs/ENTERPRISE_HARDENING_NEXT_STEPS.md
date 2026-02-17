@@ -69,3 +69,11 @@ cd backend/src
 python manage.py migrate
 python manage.py runserver
 ```
+
+
+## Governance endpoints delivered
+
+- `GET /api/v1/governance/ledger/` returns append-only audit entries with integrity flag.
+- `GET /api/v1/governance/trust-index/` returns dynamic governance scorecards for UI.
+- Audit entries now include immutable chain fields: `prev_hash`, `entry_hash`.
+

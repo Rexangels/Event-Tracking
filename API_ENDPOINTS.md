@@ -408,3 +408,16 @@ curl http://localhost:8000/api/schema/openapi.yaml > api_schema.yaml
 ---
 
 **Last Updated**: February 3, 2026
+
+
+## Governance APIs
+
+### Ledger
+**GET** `/api/v1/governance/ledger/`
+
+Returns governance ledger records with chain integrity status and paged results list.
+
+### Trust Index
+**GET** `/api/v1/governance/trust-index/`
+
+Returns governance health metrics (`data_integrity`, `source_verification`, `audit_coverage`, `integrity_ok`).
