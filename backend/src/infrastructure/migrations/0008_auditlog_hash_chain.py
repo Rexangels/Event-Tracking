@@ -40,8 +40,12 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='auditlog',
             name='entry_hash',
-            field=models.CharField(db_index=True, default='', editable=False, max_length=64, unique=True),
-            preserve_default=False,
+            field=models.CharField(db_index=True, null=True, editable=False, max_length=64),
         ),
         migrations.RunPython(backfill_hash_chain, migrations.RunPython.noop),
+        migrations.AlterField(
+            model_name='auditlog',
+            name='entry_hash',
+            field=models.CharField(db_index=True, editable=False, max_length=64, unique=True),
+        ),
     ]
