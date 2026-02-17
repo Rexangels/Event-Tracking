@@ -284,7 +284,8 @@ class GovernanceLedgerView(APIView):
     def get(self, request, *args, **kwargs):
         logs = AuditLog.objects.all().order_by('-timestamp')[:200]
         serialized_logs = AuditLogSerializer(logs, many=True).data
-        integrity_ok = _verify_audit_chain(list(logs.order_by('timestamp'))) if serialized_logs else True
+        # Verify full chain integrity for status indicator
+        integrity_ok = _verify_audit_chain(AuditLog.objects.all().order_by('timestamp').iterator())
         return Response({
             'integrity_ok': integrity_ok,
             'count': len(serialized_logs),
