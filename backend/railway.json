@@ -1,16 +1,7 @@
 {
   "$schema": "https://railway.com/railway.schema.json",
   "deploy": {
-    "startCommand": "cd src && daphne -b 0.0.0.0 -p ${PORT:-8000} config.asgi:application",
-    "preDeployCommand": [
-      "cd src && python manage.py validate_deployment --strict && python manage.py migrate --noinput && python manage.py collectstatic --noinput"
-    ],
-    "healthcheckPath": "/api/v1/health/",
-    "healthcheckTimeout": 120,
     "restartPolicyType": "ON_FAILURE",
-    "restartPolicyMaxRetries": 5,
-    "overlapSeconds": 30,
-    "drainingSeconds": 10
+    "restartPolicyMaxRetries": 5
   }
 }
-
