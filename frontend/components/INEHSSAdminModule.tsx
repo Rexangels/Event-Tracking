@@ -24,7 +24,7 @@ interface Officer {
     email?: string;
 }
 
-const API_BASE = 'http://localhost:8000/api/v1';
+const API_BASE = `${import.meta.env.VITE_API_BASE_URL || ''}/api/v1`;
 const INEHSS_ACTIVE_TAB_KEY = 'inehssActiveTab';
 
 type INEHSSTab = 'forms' | 'reports' | 'assignments' | 'officers';
