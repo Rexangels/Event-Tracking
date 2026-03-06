@@ -13,6 +13,8 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 from pathlib import Path
 import os
 from datetime import timedelta
+from urllib.parse import urlparse, unquote
+
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -29,6 +31,31 @@ def env_bool(name: str, default: bool = False) -> bool:
     return os.getenv(name, str(default)).strip().lower() in {'1', 'true', 'yes', 'on'}
 
 
+def env_list(name: str, default: str = '') -> list[str]:
+    return [item.strip() for item in os.getenv(name, default).split(',') if item.strip()]
+
+
+def parse_database_url(database_url: str) -> dict:
+    parsed = urlparse(database_url)
+    scheme = parsed.scheme.lower()
+    engine = 'django.db.backends.postgresql'
+    if scheme == 'postgis':
+        engine = 'django.contrib.gis.db.backends.postgis'
+
+    return {
+        'ENGINE': engine,
+        'NAME': unquote(parsed.path.lstrip('/')),
+        'USER': unquote(parsed.username or ''),
+        'PASSWORD': unquote(parsed.password or ''),
+        'HOST': parsed.hostname or '127.0.0.1',
+        'PORT': str(parsed.port or 5432),
+        'CONN_MAX_AGE': int(os.getenv('POSTGRES_CONN_MAX_AGE', '60')),
+        'OPTIONS': {
+            'sslmode': os.getenv('POSTGRES_SSLMODE', 'require' if ENVIRONMENT == 'production' else 'prefer'),
+        },
+    }
+
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
@@ -38,7 +65,15 @@ SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-change-me-in-production')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env_bool('DEBUG', ENVIRONMENT != 'production')
 
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+ALLOWED_HOSTS = env_list('ALLOWED_HOSTS', 'localhost,127.0.0.1')
+
+for railway_host_env in ('RAILWAY_PUBLIC_DOMAIN', 'RAILWAY_STATIC_URL'):
+    railway_host = os.getenv(railway_host_env, '').strip()
+    if not railway_host:
+        continue
+    parsed = urlparse(railway_host if '://' in railway_host else f'https://{railway_host}')
+    if parsed.hostname and parsed.hostname not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(parsed.hostname)
 
 
 # Application definition
@@ -66,6 +101,7 @@ ASGI_APPLICATION = 'config.asgi.application'
 # Channel layer - Redis in production, in-memory fallback for local development
 REDIS_URL = os.getenv('REDIS_URL', 'redis://127.0.0.1:6379/0')
 USE_REDIS_CHANNEL_LAYER = env_bool('USE_REDIS_CHANNEL_LAYER', ENVIRONMENT == 'production')
+REQUEST_ID_HEADER = os.getenv('REQUEST_ID_HEADER', 'X-Request-ID')
 
 if USE_REDIS_CHANNEL_LAYER:
     CHANNEL_LAYERS = {
@@ -86,6 +122,7 @@ else:
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'infrastructure.request_tracing.RequestIDMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -116,9 +153,14 @@ WSGI_APPLICATION = 'config.wsgi.application'
 
 # Database
 # SQLite default for local dev, PostgreSQL/PostGIS for enterprise deployments
+DATABASE_URL = os.getenv('DATABASE_URL', '').strip()
 DB_ENGINE = os.getenv('DB_ENGINE', 'sqlite').lower()
 
-if DB_ENGINE in {'postgres', 'postgis'}:
+if DATABASE_URL:
+    DATABASES = {
+        'default': parse_database_url(DATABASE_URL)
+    }
+elif DB_ENGINE in {'postgres', 'postgis'}:
     DATABASES = {
         'default': {
             'ENGINE': 'django.contrib.gis.db.backends.postgis' if DB_ENGINE == 'postgis' else 'django.db.backends.postgresql',
@@ -173,17 +215,19 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = os.getenv('STATIC_URL', '/static/')
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 # Media files
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
 # CORS - Restrict to specific origins
-CORS_ALLOWED_ORIGINS = os.getenv(
+CORS_ALLOWED_ORIGINS = env_list(
     'CORS_ALLOWED_ORIGINS',
     'http://localhost:5173,http://localhost:3000'
-).split(',')
+)
+CSRF_TRUSTED_ORIGINS = env_list('CSRF_TRUSTED_ORIGINS', '')
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
@@ -240,14 +284,20 @@ LOGGING = {
     'disable_existing_loggers': False,
     'formatters': {
         'verbose': {
-            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'format': '{levelname} {asctime} {module} {process:d} {thread:d} [{request_id}] {message}',
             'style': '{',
+        },
+    },
+    'filters': {
+        'request_id': {
+            '()': 'infrastructure.request_tracing.RequestIDLogFilter',
         },
     },
     'handlers': {
         'console': {
             'class': 'logging.StreamHandler',
             'formatter': 'verbose',
+            'filters': ['request_id'],
         },
     },
     'root': {
@@ -259,8 +309,13 @@ LOGGING = {
 # Security Headers
 SECURE_BROWSER_XSS_FILTER = True
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+USE_X_FORWARDED_HOST = env_bool('USE_X_FORWARDED_HOST', ENVIRONMENT == 'production')
+SECURE_SSL_REDIRECT = env_bool('SECURE_SSL_REDIRECT', ENVIRONMENT == 'production')
 SESSION_COOKIE_SECURE = env_bool('SESSION_COOKIE_SECURE', ENVIRONMENT == 'production')
 CSRF_COOKIE_SECURE = env_bool('CSRF_COOKIE_SECURE', ENVIRONMENT == 'production')
+SECURE_HSTS_SECONDS = int(os.getenv('SECURE_HSTS_SECONDS', '31536000' if ENVIRONMENT == 'production' else '0'))
+SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool('SECURE_HSTS_INCLUDE_SUBDOMAINS', ENVIRONMENT == 'production')
+SECURE_HSTS_PRELOAD = env_bool('SECURE_HSTS_PRELOAD', ENVIRONMENT == 'production')
 SECURE_CONTENT_SECURITY_POLICY = {
     'default-src': ("'self'",),
 }

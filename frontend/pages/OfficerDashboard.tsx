@@ -14,6 +14,7 @@ import {
     submitInspection,
     completeAssignment,
     uploadAttachment,
+    upgradeAssignmentVersion,
     OfficerAssignment
 } from '../services/inehssService';
 
@@ -193,7 +194,7 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
         const searchMatch = !q
             || assignment.report?.tracking_id?.toLowerCase().includes(q)
             || assignment.report?.address?.toLowerCase().includes(q)
-            || assignment.inspection_form?.name?.toLowerCase().includes(q)
+            || assignment.form_version?.template_name?.toLowerCase().includes(q)
             || assignment.notes?.toLowerCase().includes(q);
 
         return statusMatch && searchMatch;
@@ -276,18 +277,65 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
 
                     {/* Inspection Form */}
                     <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6">
-                        <h2 className="text-xl font-bold text-white mb-2">{selectedAssignment.inspection_form.name}</h2>
-                        <p className="text-slate-400 mb-6">{selectedAssignment.inspection_form.description}</p>
+                        <h2 className="text-xl font-bold text-white mb-2">{selectedAssignment.form_version.template_name}</h2>
+                        <div className="flex items-center gap-3 mb-6">
+                            <p className="text-slate-400">v{selectedAssignment.form_version.version_number}</p>
+                            {selectedAssignment.form_version.is_latest === false && (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-orange-500/20 text-orange-400 uppercase tracking-wider border border-orange-500/40">
+                                    Outdated Schema
+                                </span>
+                            )}
+                        </div>
+
+                        {selectedAssignment.form_version.is_latest === false && (
+                            <div className="bg-orange-500/10 border border-orange-500/30 rounded-lg p-4 mb-6">
+                                <div className="flex gap-3 items-start">
+                                    <svg className="w-5 h-5 text-orange-400 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                    </svg>
+                                    <div className="flex-1">
+                                        <h4 className="text-sm font-bold text-orange-400">Outdated Form Version</h4>
+                                        <p className="text-xs text-orange-300/80 mt-1 leading-relaxed">
+                                            You are filling out an older version of this form (v{selectedAssignment.form_version.version_number}).
+                                            A newer version exists. You can upgrade to the latest version below, or submit this draft as-is.
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="mt-3 flex gap-2 ml-8">
+                                    <button
+                                        onClick={async () => {
+                                            try {
+                                                await upgradeAssignmentVersion(selectedAssignment.id, authToken);
+                                                setSuccessMessage('Upgraded to the latest form version!');
+                                                // Reload assignments and re-select the upgraded one
+                                                const response = await getMyAssignments(authToken);
+                                                const data = response as any;
+                                                const assignmentsList = Array.isArray(data) ? data : (data?.results || []);
+                                                setAssignments(assignmentsList);
+                                                const upgraded = assignmentsList.find((a: OfficerAssignment) => a.id === selectedAssignment.id);
+                                                if (upgraded) setSelectedAssignment(upgraded);
+                                            } catch (err: any) {
+                                                setError(err?.response?.data?.error || 'Failed to upgrade version');
+                                            }
+                                        }}
+                                        className="px-4 py-1.5 bg-orange-600 hover:bg-orange-500 text-white rounded-lg text-xs font-medium transition-all"
+                                    >
+                                        ⬆ Upgrade to Latest Version
+                                    </button>
+                                </div>
+                            </div>
+                        )}
 
                         <DynamicFormRenderer
-                            schema={selectedAssignment.inspection_form.schema}
+                            schema={selectedAssignment.form_version.schema as any}
                             initialData={(selectedAssignment as any).latest_submission?.data || {}}
                             onSubmit={handleSubmitInspection}
                             onSaveDraft={handleSaveDraft}
                             isSubmitting={isSubmitting}
                             submitLabel="Submit Inspection Report"
                             onLocationChange={setLocation}
-                            requireLocation
+                            showGpsField={selectedAssignment.form_version.geo_mode !== 'disabled'}
+                            requireLocation={selectedAssignment.form_version.geo_mode === 'auto'}
                         />
                     </div>
                 </main>
@@ -414,7 +462,7 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
                                             )}
                                         </div>
                                         <p className="text-white font-medium">
-                                            {assignment.report ? assignment.report.form_template.name : assignment.inspection_form.name}
+                                            {assignment.report ? assignment.report.form_version?.template_name : assignment.form_version?.template_name}
                                         </p>
                                         <p className="text-sm text-slate-400 mt-1">{assignment.report?.address || 'Patrol: Multiple Locations'}</p>
                                         <div className="mt-3">

@@ -1,12 +1,13 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import api from '../services/api';
-import { IntelligenceEvent } from '../types';
+import { IntelligenceEvent, MapFilterState, MapLayerSettings } from '../types';
 import { useNavigate } from 'react-router-dom';
 import { fetchEvents } from '../services/eventService';
 import { authService } from '../services/authService';
 import { useRealtimeEvents } from '../hooks/useRealtimeEvents'; // Import hook
 import EventFeed from '../components/EventFeed';
 import MapVisualizer from '../components/MapVisualizer';
+import MapOperationsPanel from '../components/MapOperationsPanel';
 import AIAgentPanel from '../components/AIAgentPanel';
 import StatSummary from '../components/StatSummary';
 import RegionIntelligencePanel from '../components/RegionIntelligencePanel';
@@ -17,6 +18,12 @@ import INEHSSAdminModule from '../components/INEHSSAdminModule';
 import EventDetailPanel from '../components/EventDetailPanel';
 import Tooltip from '../components/ui/Tooltip';
 import { ExportFile } from '../services/ExportService';
+import { getAssignments, getReports, HazardReport, OfficerAssignment } from '../services/inehssService';
+import { applyMapOperations, createDefaultMapFilters, createDefaultMapLayerSettings, getSearchMatches, getSourceOptions } from '../utils/mapOperations';
+import { countMapOverlays, deriveMapOverlays } from '../utils/mapOverlays';
+
+const MAP_OPERATIONS_HINT_KEY = 'adminMapOperationsHintSeen';
+const ADMIN_ACTIVE_MODULE_KEY = 'adminActiveModule';
 
 const AdminDashboard: React.FC = () => {
     const [events, setEvents] = useState<IntelligenceEvent[]>([]);
@@ -28,11 +35,28 @@ const AdminDashboard: React.FC = () => {
     const [systemHealth, setSystemHealth] = useState<any>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [isSearchVisible, setIsSearchVisible] = useState(false);
+    const [isMapOperationsOpen, setIsMapOperationsOpen] = useState(false);
+    const [hasSeenMapOperationsHint, setHasSeenMapOperationsHint] = useState<boolean>(() => {
+        return sessionStorage.getItem(MAP_OPERATIONS_HINT_KEY) === 'true';
+    });
+    const [mapFilters, setMapFilters] = useState<MapFilterState>(() => createDefaultMapFilters());
+    const [mapLayerSettings, setMapLayerSettings] = useState<MapLayerSettings>(() => createDefaultMapLayerSettings());
+    const [hazardReports, setHazardReports] = useState<HazardReport[]>([]);
+    const [assignments, setAssignments] = useState<OfficerAssignment[]>([]);
     const navigate = useNavigate();
 
     const handleLogout = () => {
         authService.logout();
         navigate('/login');
+    };
+
+    const revealMapOperations = () => {
+        if (!hasSeenMapOperationsHint) {
+            sessionStorage.setItem(MAP_OPERATIONS_HINT_KEY, 'true');
+            setHasSeenMapOperationsHint(true);
+        }
+        if (activeModule !== 'VISUALIZATION') setActiveModule('VISUALIZATION');
+        setIsMapOperationsOpen(prev => !prev);
     };
 
     // Real-time Event Hook
@@ -84,38 +108,150 @@ const AdminDashboard: React.FC = () => {
         loadEvents();
     }, []);
 
+    useEffect(() => {
+        const loadOperationalOverlays = async () => {
+            const token = authService.getToken();
+            if (!token) return;
+
+            try {
+                const [reportsData, assignmentsData] = await Promise.all([
+                    getReports(token),
+                    getAssignments(token),
+                ]);
+                setHazardReports(reportsData);
+                setAssignments(assignmentsData);
+            } catch (error) {
+                console.error('Failed to load map overlay data', error);
+                setHazardReports([]);
+                setAssignments([]);
+            }
+        };
+
+        loadOperationalOverlays();
+    }, []);
+
     const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
-    const [activeModule, setActiveModule] = useState<'VISUALIZATION' | 'ANALYST' | 'GOVERNANCE' | 'INEHSS'>('VISUALIZATION');
+    const [activeModule, setActiveModule] = useState<'VISUALIZATION' | 'ANALYST' | 'GOVERNANCE' | 'INEHSS'>(() => {
+        return (sessionStorage.getItem(ADMIN_ACTIVE_MODULE_KEY) as any) || 'VISUALIZATION';
+    });
+    const previousActiveModuleRef = useRef(activeModule);
+
+    useEffect(() => {
+        const previousActiveModule = previousActiveModuleRef.current;
+
+        if (previousActiveModule === 'VISUALIZATION' && activeModule !== 'VISUALIZATION') {
+            setMapLayerSettings(createDefaultMapLayerSettings());
+            setIsMapOperationsOpen(false);
+        }
+
+        sessionStorage.setItem(ADMIN_ACTIVE_MODULE_KEY, activeModule);
+        previousActiveModuleRef.current = activeModule;
+    }, [activeModule]);
+
+    const handleSelectEvent = (event: IntelligenceEvent, focusRegion = false) => {
+        if (focusRegion && event.region) {
+            setSelectedRegion(event.region);
+        }
+        setSelectedEventId(event.id);
+        setIsDetailOpen(true);
+        if (activeModule !== 'VISUALIZATION') setActiveModule('VISUALIZATION');
+    };
+
 
     const selectedEvent = useMemo(() =>
         events.find(e => e.id === selectedEventId) || null
         , [selectedEventId, events]);
 
+    const sourceOptions = useMemo(() => getSourceOptions(events), [events]);
+
+    useEffect(() => {
+        if (mapFilters.source !== 'all' && !sourceOptions.includes(mapFilters.source)) {
+            setMapFilters(prev => ({ ...prev, source: 'all' }));
+        }
+    }, [mapFilters.source, sourceOptions]);
+
     const filteredEvents = useMemo(() => {
-        let filtered = events;
-
-        // 1. Filter by Region
-        if (selectedRegion) {
-            filtered = filtered.filter(e => e.region === selectedRegion);
-        }
-
-        // 2. Filter by Search Query
-        if (searchQuery.trim()) {
-            const query = searchQuery.toLowerCase();
-            filtered = filtered.filter(e =>
-                e.title.toLowerCase().includes(query) ||
-                e.description.toLowerCase().includes(query) ||
-                e.location.toLowerCase().includes(query)
-            );
-        }
-
-        return filtered;
-    }, [selectedRegion, events, searchQuery]);
+        return applyMapOperations(events, {
+            selectedRegion,
+            searchQuery,
+            filters: mapFilters,
+        });
+    }, [selectedRegion, events, searchQuery, mapFilters]);
 
     // Derived for panels that need specific region data (legacy support if needed)
     const regionalEvents = useMemo(() =>
-        selectedRegion ? events.filter(e => e.region === selectedRegion) : []
-        , [selectedRegion, events]);
+        selectedRegion ? filteredEvents.filter(e => e.region === selectedRegion) : []
+        , [selectedRegion, filteredEvents]);
+
+    const searchMatches = useMemo(() => getSearchMatches(filteredEvents, searchQuery), [filteredEvents, searchQuery]);
+
+    const mapOverlays = useMemo(() => {
+        return deriveMapOverlays({
+            events,
+            reports: hazardReports,
+            assignments,
+            selectedRegion,
+            searchQuery,
+        });
+    }, [events, hazardReports, assignments, selectedRegion, searchQuery]);
+
+    const overlayCounts = useMemo(() => countMapOverlays(mapOverlays), [mapOverlays]);
+
+    const resetMapOperations = () => {
+        setSearchQuery('');
+        setSelectedRegion(null);
+        setMapFilters(createDefaultMapFilters());
+        setMapLayerSettings(createDefaultMapLayerSettings());
+    };
+
+    const toggleSeverity = (severity: keyof MapFilterState['severity']) => {
+        setMapFilters(prev => ({
+            ...prev,
+            severity: {
+                ...prev.severity,
+                [severity]: !prev.severity[severity],
+            },
+        }));
+    };
+
+    const toggleType = (type: keyof MapFilterState['types']) => {
+        setMapFilters(prev => ({
+            ...prev,
+            types: {
+                ...prev.types,
+                [type]: !prev.types[type],
+            },
+        }));
+    };
+
+    const toggleLayer = (layer: keyof MapLayerSettings) => {
+        setMapLayerSettings(prev => ({
+            ...prev,
+            [layer]: !prev[layer],
+        }));
+    };
+
+    const handleOverlaySelect = (overlay: { eventId?: string | null; reportId?: string | null }) => {
+        if (overlay.eventId) {
+            const matchingEvent = events.find((event) => event.id === overlay.eventId);
+            if (matchingEvent) {
+                handleSelectEvent(matchingEvent, true);
+                return;
+            }
+        }
+
+        if (overlay.reportId) {
+            sessionStorage.setItem(ADMIN_ACTIVE_MODULE_KEY, 'VISUALIZATION');
+            navigate(`/inehss/reports/${overlay.reportId}`, {
+                state: {
+                    returnContext: {
+                        adminModule: 'VISUALIZATION',
+                        origin: 'map',
+                    },
+                },
+            });
+        }
+    };
 
     return (
         <div className="flex flex-col h-screen bg-[#020617] text-slate-200 overflow-hidden font-sans selection:bg-blue-500/30">
@@ -187,11 +323,7 @@ const AdminDashboard: React.FC = () => {
                     <aside className="w-80 shrink-0 relative z-30 shadow-2xl bg-slate-950">
                         <EventFeed
                             events={filteredEvents}
-                            onSelectEvent={(e) => {
-                                setSelectedEventId(e.id);
-                                setIsDetailOpen(true);
-                                if (activeModule !== 'VISUALIZATION') setActiveModule('VISUALIZATION');
-                            }}
+                            onSelectEvent={(e) => handleSelectEvent(e)}
                             selectedEventId={selectedEventId}
                             isSearchVisible={isSearchVisible}
                             searchQuery={searchQuery}
@@ -207,13 +339,40 @@ const AdminDashboard: React.FC = () => {
                                 <div className="h-[60%] shrink-0 relative min-h-[400px]">
                                     <MapVisualizer
                                         events={filteredEvents}
-                                        onEventClick={(e) => {
-                                            setSelectedEventId(e.id);
-                                            setIsDetailOpen(true);
-                                        }}
+                                        onEventClick={(e) => handleSelectEvent(e)}
                                         selectedEventId={selectedEventId}
+                                        focusedEvent={selectedEvent}
                                         selectedRegion={selectedRegion}
                                         onRegionSelect={setSelectedRegion}
+                                        layerSettings={mapLayerSettings}
+                                        overlays={mapOverlays}
+                                        onOverlayClick={handleOverlaySelect}
+                                        onToggleHeatmap={() => toggleLayer('showHeatmap')}
+                                    />
+
+                                    <MapOperationsPanel
+                                        isOpen={isMapOperationsOpen}
+                                        totalEvents={events.length}
+                                        filteredEvents={filteredEvents}
+                                        selectedRegion={selectedRegion}
+                                        searchQuery={searchQuery}
+                                        filters={mapFilters}
+                                        layerSettings={mapLayerSettings}
+                                        overlayCounts={overlayCounts}
+                                        sourceOptions={sourceOptions}
+                                        searchMatches={searchMatches}
+                                        onClose={() => setIsMapOperationsOpen(false)}
+                                        onSearchQueryChange={setSearchQuery}
+                                        onVerificationChange={(value) => setMapFilters(prev => ({ ...prev, verification: value }))}
+                                        onLinkedReportChange={(value) => setMapFilters(prev => ({ ...prev, linkedReport: value }))}
+                                        onTimeWindowChange={(value) => setMapFilters(prev => ({ ...prev, timeWindowHours: value }))}
+                                        onSourceChange={(value) => setMapFilters(prev => ({ ...prev, source: value }))}
+                                        onToggleSeverity={toggleSeverity}
+                                        onToggleType={toggleType}
+                                        onToggleLayer={toggleLayer}
+                                        onSelectEvent={(event) => handleSelectEvent(event, true)}
+                                        onClearRegion={() => setSelectedRegion(null)}
+                                        onReset={resetMapOperations}
                                     />
 
                                     {selectedRegion && (
@@ -257,15 +416,30 @@ const AdminDashboard: React.FC = () => {
                     <aside className="w-16 border-l border-slate-800 flex flex-col items-center py-6 gap-6 shrink-0 bg-slate-950 relative z-40">
                         {[
                             { id: 'search', icon: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z', action: () => setIsSearchVisible(!isSearchVisible) },
-                            { id: 'layers', icon: 'M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2', action: () => { } },
+                            {
+                                id: 'layers',
+                                icon: 'M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2',
+                                action: revealMapOperations
+                            },
                             { id: 'alert', icon: 'M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9', action: () => { } },
                             { id: 'logout', icon: 'M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1', action: handleLogout }
                         ].map(action => (
                             <button
                                 key={action.id}
                                 onClick={action.action}
-                                className={`p-2 rounded hover:bg-slate-800 transition-colors group relative ${action.id === 'search' && isSearchVisible ? 'bg-slate-800 text-blue-400' : ''}`}
+                                className={`p-2 rounded hover:bg-slate-800 transition-colors group relative ${(action.id === 'search' && isSearchVisible) || (action.id === 'layers' && isMapOperationsOpen) ? 'bg-slate-800 text-blue-400' : ''} ${action.id === 'layers' && !isMapOperationsOpen && !hasSeenMapOperationsHint ? 'animate-map-operations-hint' : ''}`}
                             >
+                                {action.id === 'layers' && !isMapOperationsOpen && !hasSeenMapOperationsHint && (
+                                    <>
+                                        <span className="absolute -right-0.5 -top-0.5 flex h-3 w-3">
+                                            <span className="absolute inline-flex h-full w-full rounded-full bg-blue-400/70 opacity-75 animate-ping"></span>
+                                            <span className="relative inline-flex h-3 w-3 rounded-full bg-blue-500 border border-slate-950"></span>
+                                        </span>
+                                        <span className="absolute left-1/2 top-full mt-2 -translate-x-1/2 whitespace-nowrap rounded-full border border-blue-500/30 bg-slate-900/95 px-2 py-1 text-[9px] font-bold uppercase tracking-widest text-blue-300 shadow-lg animate-map-operations-pill pointer-events-none">
+                                            Map tools
+                                        </span>
+                                    </>
+                                )}
                                 <svg className="w-5 h-5 text-slate-500 group-hover:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={action.icon} />
                                 </svg>

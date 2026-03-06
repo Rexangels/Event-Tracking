@@ -1,7 +1,7 @@
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import * as d3 from 'd3';
-import { IntelligenceEvent, EventSeverity } from '../types';
+import { IntelligenceEvent, EventSeverity, MapLayerSettings, MapOverlayCollection, MapOverlayItem } from '../types';
 import { MAP_COLORS, EVENT_ICONS, getClusterColor } from '../constants';
 import LeafletDetailLayer from './LeafletDetailLayer';
 
@@ -10,8 +10,13 @@ interface MapVisualizerProps {
   events: IntelligenceEvent[];
   onEventClick: (event: IntelligenceEvent) => void;
   selectedEventId?: string;
+  focusedEvent?: IntelligenceEvent | null;
   selectedRegion: string | null;
   onRegionSelect: (region: string | null) => void;
+  layerSettings: MapLayerSettings;
+  overlays: MapOverlayCollection;
+  onOverlayClick: (overlay: MapOverlayItem) => void;
+  onToggleHeatmap: () => void;
 }
 
 interface Cluster {
@@ -21,12 +26,42 @@ interface Cluster {
   events: IntelligenceEvent[];
 }
 
+const OVERLAY_COLORS: Record<MapOverlayItem['kind'], string> = {
+  report: '#38bdf8',
+  assignment: '#f59e0b',
+  patrol_origin: '#34d399',
+};
+
+const overlayLayers: Array<{ key: keyof MapOverlayCollection; className: string; enabled: keyof MapLayerSettings }> = [
+  { key: 'reports', className: 'report-overlays-layer', enabled: 'showReportOverlays' },
+  { key: 'assignments', className: 'assignment-overlays-layer', enabled: 'showAssignmentOverlays' },
+  { key: 'patrolOrigins', className: 'patrol-overlays-layer', enabled: 'showPatrolOrigins' },
+];
+
+const hasDistinctTarget = (overlay: MapOverlayItem) => {
+  if (!overlay.relatedEventCoords) return false;
+  const latDelta = Math.abs(overlay.coords.lat - overlay.relatedEventCoords.lat);
+  const lngDelta = Math.abs(overlay.coords.lng - overlay.relatedEventCoords.lng);
+  return latDelta > 0.0001 || lngDelta > 0.0001;
+};
+
+const getOverlayLabel = (overlay: MapOverlayItem) => {
+  if (overlay.kind === 'assignment') return overlay.officerUsername || 'TASK';
+  if (overlay.kind === 'patrol_origin') return 'PATROL';
+  return overlay.trackingId || 'REPORT';
+};
+
 const MapVisualizer: React.FC<MapVisualizerProps> = ({
   events,
   onEventClick,
   selectedEventId,
+  focusedEvent,
   selectedRegion,
-  onRegionSelect
+  onRegionSelect,
+  layerSettings,
+  overlays,
+  onOverlayClick,
+  onToggleHeatmap,
 }) => {
 
   const svgRef = useRef<SVGSVGElement>(null);
@@ -35,8 +70,8 @@ const MapVisualizer: React.FC<MapVisualizerProps> = ({
   const projectionRef = useRef<d3.GeoProjection | null>(null);
   const currentZoomRef = useRef(1);
 
-  const [showHeatmap, setShowHeatmap] = useState(false);
   const [zoomDisplay, setZoomDisplay] = useState(1); // Only for UI display
+  const [isLegendOpen, setIsLegendOpen] = useState(false);
 
   // Hybrid Map State
   const [viewMode, setViewMode] = useState<'VECTOR' | 'DETAIL'>('VECTOR');
@@ -46,6 +81,7 @@ const MapVisualizer: React.FC<MapVisualizerProps> = ({
   // Cache for subregions to prevent flickering/re-fetching
   const subregionCache = useRef<Record<string, any>>({});
   const lastLoadedRegion = useRef<string | null>(null);
+  const selectedRegionRef = useRef<string | null>(selectedRegion);
 
   const width = 1000;
   const height = 600;
@@ -262,6 +298,10 @@ const MapVisualizer: React.FC<MapVisualizerProps> = ({
 
   }, [events, selectedEventId, onEventClick, computeClusters]);
 
+  useEffect(() => {
+    selectedRegionRef.current = selectedRegion;
+  }, [selectedRegion]);
+
   // Initialize Map (Static Layers & Zoom) - Runs Once
   useEffect(() => {
     if (!svgRef.current || gRef.current) return; // Prevent double init
@@ -274,6 +314,11 @@ const MapVisualizer: React.FC<MapVisualizerProps> = ({
     const heatmapLayer = g.append('g').attr('class', 'heatmap-layer');
     const regionsLayer = g.append('g').attr('class', 'regions-layer');
     g.append('g').attr('class', 'events-layer');
+    const overlaysLayer = g.append('g').attr('class', 'operational-overlays-layer');
+    overlaysLayer.append('g').attr('class', 'overlay-links-layer');
+    overlaysLayer.append('g').attr('class', 'report-overlays-layer');
+    overlaysLayer.append('g').attr('class', 'assignment-overlays-layer');
+    overlaysLayer.append('g').attr('class', 'patrol-overlays-layer');
 
     const projection = d3.geoMercator()
       .scale(160)
@@ -309,7 +354,7 @@ const MapVisualizer: React.FC<MapVisualizerProps> = ({
 
         // HYBRID SWITCH LOGIC
         // If zoomed in significantly (> 8x), switch to Leaflet Mode
-        if (event.transform.k > 6) { // Threshold 6 for earlier switch
+        if (layerSettings.enableAutoDetail && event.transform.k > 6) { // Threshold 6 for earlier switch
           // Calculate center
           // Invert the center pixel [width/2, height/2] to get Lat/Lng
           if (projectionRef.current) {
@@ -347,7 +392,7 @@ const MapVisualizer: React.FC<MapVisualizerProps> = ({
         .on('click', (event, d: any) => {
           event.stopPropagation();
           const name = d.properties.name;
-          onRegionSelect(name === selectedRegion ? null : name);
+          onRegionSelect(name === selectedRegionRef.current ? null : name);
         });
 
       // Graticule
@@ -371,7 +416,7 @@ const MapVisualizer: React.FC<MapVisualizerProps> = ({
       }
     });
 
-  }, []);
+  }, [layerSettings.enableAutoDetail, onRegionSelect]);
 
   // Update Events & Heatmap (Dynamic)
   useEffect(() => {
@@ -384,7 +429,7 @@ const MapVisualizer: React.FC<MapVisualizerProps> = ({
     const heatmapLayer = gRef.current.select('.heatmap-layer');
     heatmapLayer.selectAll('*').remove();
 
-    if (showHeatmap && events.length > 0) {
+    if (layerSettings.showHeatmap && events.length > 0) {
       const projection = projectionRef.current;
       const k = currentZoomRef.current;
 
@@ -427,13 +472,152 @@ const MapVisualizer: React.FC<MapVisualizerProps> = ({
         .attr('fill', d => colorScale(d.value))
         .attr('opacity', 0.5);
     }
-  }, [events, showHeatmap, zoomDisplay, updateEventsLayer]); // Added zoomDisplay to trigger re-calculation
+  }, [events, layerSettings.showHeatmap, zoomDisplay, updateEventsLayer]); // Added zoomDisplay to trigger re-calculation
+
+  useEffect(() => {
+    if (!gRef.current || !projectionRef.current) return;
+
+    const g = gRef.current;
+    const projection = projectionRef.current;
+    const overlaysRoot = g.select('.operational-overlays-layer');
+    const linksLayer = overlaysRoot.select('.overlay-links-layer');
+
+    overlayLayers.forEach(({ className }) => {
+      overlaysRoot.select(`.${className}`).selectAll('*').remove();
+    });
+    linksLayer.selectAll('*').remove();
+
+    const activeOverlayGroups = overlayLayers
+      .filter(({ enabled }) => layerSettings[enabled])
+      .flatMap(({ key }) => overlays[key]);
+
+    if (activeOverlayGroups.length === 0) return;
+
+    const projectedOverlays = activeOverlayGroups
+      .map((overlay) => {
+        const point = projection([overlay.coords.lng, overlay.coords.lat]);
+        if (!point) return null;
+        const targetPoint = overlay.relatedEventCoords
+          ? projection([overlay.relatedEventCoords.lng, overlay.relatedEventCoords.lat])
+          : null;
+        return { overlay, x: point[0], y: point[1], targetPoint };
+      })
+      .filter((item): item is { overlay: MapOverlayItem; x: number; y: number; targetPoint: [number, number] | null } => Boolean(item));
+
+    const k = Math.max(currentZoomRef.current, 1);
+    const linkableOverlays = projectedOverlays.filter(({ overlay, targetPoint }) => Boolean(targetPoint) && hasDistinctTarget(overlay));
+
+    linksLayer
+      .selectAll('.overlay-link')
+      .data(linkableOverlays, (d: any) => `${d.overlay.id}-link`)
+      .enter()
+      .append('line')
+      .attr('class', 'overlay-link')
+      .attr('x1', (d) => d.x)
+      .attr('y1', (d) => d.y)
+      .attr('x2', (d) => d.targetPoint![0])
+      .attr('y2', (d) => d.targetPoint![1])
+      .attr('stroke', (d) => OVERLAY_COLORS[d.overlay.kind])
+      .attr('stroke-width', Math.max(0.8, 1.4 / Math.sqrt(k)))
+      .attr('stroke-dasharray', `${6 / k} ${4 / k}`)
+      .attr('opacity', 0.55);
+
+    overlayLayers.forEach(({ key, className, enabled }) => {
+      if (!layerSettings[enabled]) return;
+      const layer = overlaysRoot.select(`.${className}`);
+      const layerOverlays = projectedOverlays.filter((item) => overlays[key].some((overlay) => overlay.id === item.overlay.id));
+
+      const groups = layer
+        .selectAll('.overlay-group')
+        .data(layerOverlays, (d: any) => d.overlay.id)
+        .enter()
+        .append('g')
+        .attr('class', 'overlay-group')
+        .attr('transform', (d) => `translate(${d.x}, ${d.y})`)
+        .style('cursor', 'pointer')
+        .on('click', (event, d) => {
+          event.stopPropagation();
+          onOverlayClick(d.overlay);
+        });
+
+      groups.append('circle')
+        .attr('r', key === 'assignments' ? 9 / Math.sqrt(k) : 8 / Math.sqrt(k))
+        .attr('fill', 'rgba(2, 6, 23, 0.72)')
+        .attr('stroke', (d) => OVERLAY_COLORS[d.overlay.kind])
+        .attr('stroke-width', (d) => d.overlay.kind === 'assignment' ? 2.8 / Math.sqrt(k) : 2.2 / Math.sqrt(k))
+        .attr('stroke-dasharray', (d) => d.overlay.kind === 'assignment' ? `${5 / k} ${3 / k}` : null)
+        .style('filter', (d) => `drop-shadow(0 0 6px ${OVERLAY_COLORS[d.overlay.kind]})`);
+
+      groups.filter((d) => d.overlay.kind === 'report')
+        .append('rect')
+        .attr('x', -4 / Math.sqrt(k))
+        .attr('y', -4 / Math.sqrt(k))
+        .attr('width', 8 / Math.sqrt(k))
+        .attr('height', 8 / Math.sqrt(k))
+        .attr('transform', 'rotate(45)')
+        .attr('fill', OVERLAY_COLORS.report)
+        .attr('opacity', 0.9);
+
+      groups.filter((d) => d.overlay.kind === 'assignment')
+        .append('path')
+        .attr('d', `M ${-3.5 / Math.sqrt(k)} ${4 / Math.sqrt(k)} L 0 ${-4.5 / Math.sqrt(k)} L ${3.5 / Math.sqrt(k)} ${4 / Math.sqrt(k)} Z`)
+        .attr('fill', OVERLAY_COLORS.assignment)
+        .attr('opacity', 0.95);
+
+      groups.filter((d) => d.overlay.kind === 'patrol_origin')
+        .append('circle')
+        .attr('r', 3.5 / Math.sqrt(k))
+        .attr('fill', OVERLAY_COLORS.patrol_origin)
+        .attr('opacity', 0.95);
+
+      groups.append('title')
+        .text((d) => `${d.overlay.title}\n${d.overlay.subtitle}${d.overlay.status ? `\nStatus: ${d.overlay.status}` : ''}`);
+
+      if (k > 3.5) {
+        groups.append('text')
+          .attr('y', 14 / Math.sqrt(k))
+          .attr('text-anchor', 'middle')
+          .attr('fill', '#cbd5e1')
+          .attr('font-size', 9 / Math.sqrt(k))
+          .attr('font-weight', 700)
+          .attr('pointer-events', 'none')
+          .text((d) => getOverlayLabel(d.overlay));
+      }
+    });
+  }, [layerSettings, onOverlayClick, overlays, zoomDisplay]);
+
+  useEffect(() => {
+    if (!gRef.current) return;
+    const g = gRef.current;
+    g.select('.regions-layer')
+      .attr('opacity', layerSettings.showRegions ? 1 : 0.08)
+      .style('pointer-events', layerSettings.showRegions ? 'auto' : 'none');
+
+    const showSubregions = layerSettings.showRegions && layerSettings.showSubregions;
+    g.select('.subregions').style('display', showSubregions ? null : 'none');
+    g.select('.subregion-labels').style('display', showSubregions ? null : 'none');
+    g.select('.events-layer').style('display', layerSettings.showMarkers ? null : 'none');
+    g.select('.heatmap-layer').style('display', layerSettings.showHeatmap ? null : 'none');
+    g.select('.report-overlays-layer').style('display', layerSettings.showReportOverlays ? null : 'none');
+    g.select('.assignment-overlays-layer').style('display', layerSettings.showAssignmentOverlays ? null : 'none');
+    g.select('.patrol-overlays-layer').style('display', layerSettings.showPatrolOrigins ? null : 'none');
+    g.select('.overlay-links-layer').style(
+      'display',
+      layerSettings.showReportOverlays || layerSettings.showAssignmentOverlays || layerSettings.showPatrolOrigins ? null : 'none',
+    );
+  }, [layerSettings]);
 
   // Handle Region Selection / Subregions
   useEffect(() => {
     if (!gRef.current || !projectionRef.current) return;
     const g = gRef.current;
     const regionsLayer = g.select('.regions-layer');
+
+    if (!layerSettings.showSubregions) {
+      g.select('.subregions').remove();
+      g.select('.subregion-labels').remove();
+      return;
+    }
 
     // Update World Region Styling
     regionsLayer.selectAll('.region')
@@ -568,7 +752,37 @@ const MapVisualizer: React.FC<MapVisualizerProps> = ({
     }
     // If selectedRegion is null, we persist the last loaded layer (handling "cancel panel" use case)
 
-  }, [selectedRegion]);
+  }, [selectedRegion, layerSettings.showSubregions]);
+
+  useEffect(() => {
+    if (viewMode !== 'DETAIL' || layerSettings.enableAutoDetail) return;
+    setViewMode('VECTOR');
+  }, [layerSettings.enableAutoDetail, viewMode]);
+
+  useEffect(() => {
+    if (!focusedEvent || !svgRef.current || !zoomRef.current || !projectionRef.current) return;
+
+    if (viewMode === 'DETAIL') {
+      setLeafletCenter([focusedEvent.coords.lat, focusedEvent.coords.lng]);
+      setLeafletZoom(current => Math.max(current, 13));
+      return;
+    }
+
+    const projected = projectionRef.current([focusedEvent.coords.lng, focusedEvent.coords.lat]);
+    if (!projected) return;
+
+    const [x, y] = projected;
+    const targetScale = Math.max(currentZoomRef.current, 4.5);
+    const transform = d3.zoomIdentity
+      .translate(width / 2, height / 2)
+      .scale(targetScale)
+      .translate(-x, -y);
+
+    d3.select(svgRef.current)
+      .transition()
+      .duration(650)
+      .call(zoomRef.current.transform as any, transform);
+  }, [focusedEvent, viewMode]);
 
   const handleManualZoom = (direction: 'in' | 'out' | 'reset') => {
     if (!svgRef.current || !zoomRef.current) return;
@@ -624,8 +838,8 @@ const MapVisualizer: React.FC<MapVisualizerProps> = ({
         </button>
         <div className="w-8 h-[1px] my-1 bg-slate-700"></div>
         <button
-          onClick={() => setShowHeatmap(!showHeatmap)}
-          className={`w-8 h-8 border rounded flex items-center justify-center transition-all shadow-lg ${showHeatmap
+          onClick={onToggleHeatmap}
+          className={`w-8 h-8 border rounded flex items-center justify-center transition-all shadow-lg ${layerSettings.showHeatmap
             ? 'bg-orange-500/90 border-orange-400 text-white'
             : 'bg-slate-900/90 border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white'
             }`}
@@ -656,6 +870,11 @@ const MapVisualizer: React.FC<MapVisualizerProps> = ({
             center={leafletCenter}
             zoom={leafletZoom}
             onEventClick={onEventClick}
+            showMarkers={layerSettings.showMarkers}
+            selectedEventId={selectedEventId}
+            overlays={overlays}
+            layerSettings={layerSettings}
+            onOverlayClick={onOverlayClick}
           />
           <button
             onClick={() => {
@@ -673,14 +892,51 @@ const MapVisualizer: React.FC<MapVisualizerProps> = ({
       )}
 
       {/* Legend */}
-      <div className="absolute bottom-4 right-4 z-10 flex flex-col gap-1.5">
-        <div className="text-[8px] text-slate-500 uppercase tracking-widest mb-1 font-bold">Severity</div>
-        {Object.entries(MAP_COLORS).reverse().map(([severity, color]) => (
-          <div key={severity} className="flex items-center gap-2 backdrop-blur px-2.5 py-1 rounded border bg-slate-900/60 border-slate-800/50">
-            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: color, boxShadow: `0 0 8px ${color}` }} />
-            <span className="text-[9px] uppercase font-bold tracking-tighter text-slate-400">{severity}</span>
+      <div className="absolute bottom-4 right-4 z-10 flex flex-col items-end gap-2">
+        {isLegendOpen && (
+          <div className="rounded-xl border border-slate-800/80 bg-slate-950/92 backdrop-blur px-3 py-3 shadow-xl animate-in fade-in">
+            <div className="text-[8px] text-slate-500 uppercase tracking-widest mb-2 font-bold">Severity</div>
+            <div className="flex flex-col gap-1.5">
+              {Object.entries(MAP_COLORS).reverse().map(([severity, color]) => (
+                <div key={severity} className="flex items-center gap-2 px-2 py-1 rounded border bg-slate-900/60 border-slate-800/50">
+                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: color, boxShadow: `0 0 8px ${color}` }} />
+                  <span className="text-[9px] uppercase font-bold tracking-tighter text-slate-400">{severity}</span>
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 text-[8px] text-slate-500 uppercase tracking-widest mb-2 font-bold">Overlays</div>
+            <div className="flex flex-col gap-1.5">
+              {[
+                ['Reports', OVERLAY_COLORS.report, layerSettings.showReportOverlays],
+                ['Tasks', OVERLAY_COLORS.assignment, layerSettings.showAssignmentOverlays],
+                ['Patrol', OVERLAY_COLORS.patrol_origin, layerSettings.showPatrolOrigins],
+              ].map(([label, color, enabled]) => (
+                <div key={String(label)} className={`flex items-center gap-2 px-2 py-1 rounded border bg-slate-900/60 border-slate-800/50 ${enabled ? '' : 'opacity-40'}`}>
+                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: String(color), boxShadow: `0 0 8px ${String(color)}` }} />
+                  <span className="text-[9px] uppercase font-bold tracking-tighter text-slate-400">{label}</span>
+                </div>
+              ))}
+            </div>
           </div>
-        ))}
+        )}
+
+        <button
+          type="button"
+          onClick={() => setIsLegendOpen((prev) => !prev)}
+          className="flex items-center gap-2 rounded-full border border-slate-700/80 bg-slate-950/90 px-3 py-2 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-300 shadow-lg backdrop-blur transition-colors hover:border-slate-600 hover:bg-slate-900"
+          aria-expanded={isLegendOpen}
+          aria-label={isLegendOpen ? 'Hide map legend' : 'Show map legend'}
+        >
+          <span className="flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-blue-400"></span>
+            <span className="h-2 w-2 rounded-full bg-amber-400"></span>
+            <span className="h-2 w-2 rounded-full bg-emerald-400"></span>
+          </span>
+          Legend
+          <svg className={`h-3 w-3 transition-transform ${isLegendOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
       </div>
     </div>
   );

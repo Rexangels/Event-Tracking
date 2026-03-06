@@ -7,12 +7,14 @@ from infrastructure.models import EventModel
 from .serializers import EventReportSerializer
 from django.db.models import Count, Q
 from domain.entities import EventSeverity, EventStatus
+import logging
 import json
 
 from rest_framework import viewsets, permissions
 from rest_framework.authtoken.views import ObtainAuthToken
 from rest_framework.authtoken.models import Token
-from infrastructure.models import AuditLog, AIInteractionLog
+from infrastructure.health import build_health_report
+from infrastructure.models import AuditLog, AIInteractionLog, SyncConflictLog
 from .serializers import (
     AuditLogSerializer,
     AIInteractionLogSerializer,
@@ -24,8 +26,44 @@ from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiTypes
 
 from .ai_audit import redact_sensitive_text, normalize_explainability
 
+logger = logging.getLogger(__name__)
+
+
+def _get_expected_version(request):
+    raw_value = request.data.get('expected_version') or request.query_params.get('expected_version')
+    if raw_value in (None, ''):
+        return None
+    try:
+        return int(raw_value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _version_conflict_response(request, instance, record_type: str):
+    expected_version = _get_expected_version(request)
+    if expected_version is None or expected_version == instance.version:
+        return None
+
+    SyncConflictLog.objects.create(
+        record_type=record_type,
+        record_id=str(instance.pk),
+        client_version=expected_version,
+        server_version=instance.version,
+        actor=request.user if request.user.is_authenticated else None,
+        details=f'Expected version {expected_version}, found {instance.version}',
+    )
+    return Response(
+        {
+            'error': 'VERSION_CONFLICT',
+            'message': 'The record changed on the server. Refresh and retry with the latest version.',
+            'current_version': instance.version,
+        },
+        status=status.HTTP_409_CONFLICT,
+    )
+
 class EventReportCreateView(APIView):
     parser_classes = (MultiPartParser, FormParser)
+    permission_classes = [permissions.AllowAny]
 
     @extend_schema(
         request={
@@ -71,16 +109,12 @@ class EventReportCreateView(APIView):
                     status=status.HTTP_201_CREATED
                 )
             except Exception as e:
-                import logging
-                logger = logging.getLogger(__name__)
                 logger.error(f"Event creation failed: {str(e)}")
                 return Response(
                     {'error': f"SYSTEM_ERROR: {str(e)}"},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
         else:
-            import logging
-            logger = logging.getLogger(__name__)
             logger.warning(f"Validation failed for report: {serializer.errors}")
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -161,7 +195,7 @@ class StatsSummaryView(APIView):
             high_events = EventModel.objects.filter(severity=EventSeverity.HIGH.value).count()
             
             # Calculate sensor integrity (mock logic based on recent verified events)
-            verified_count = EventModel.objects.filter(status='VERIFIED').count()
+            verified_count = EventModel.objects.filter(status=EventStatus.VERIFIED.value).count()
             integrity = (verified_count / total_events * 100) if total_events > 0 else 100
             
             # Calculate heat index (mock logic - e.g., density of high severity events)
@@ -174,10 +208,7 @@ class StatsSummaryView(APIView):
                 'global_heat_index': round(heat_index, 1)
             })
         except Exception as e:
-            import traceback
-            with open('server_error.log', 'a') as f:
-                f.write(f"StatsSummaryView Error: {str(e)}\n")
-                f.write(traceback.format_exc())
+            logger.exception('StatsSummaryView error')
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -358,18 +389,27 @@ class EventActionView(APIView):
     def post(self, request, pk=None, action=None, *args, **kwargs):
         try:
             event = EventModel.objects.get(pk=pk)
+            conflict_response = _version_conflict_response(request, event, 'event')
+            if conflict_response:
+                return conflict_response
             
             if action == 'verify':
-                event.status = EventStatus.VERIFIED.value
+                next_status = EventStatus.VERIFIED.value
+                reason = 'Event verified by operator'
             elif action == 'escalate':
-                event.status = EventStatus.ESCALATED.value
-                # In a real app, we'd store escalation details in a separate model
+                next_status = EventStatus.ESCALATED.value
+                reason = 'Event escalated for further review'
             elif action == 'archive':
-                event.status = EventStatus.ARCHIVED.value
+                next_status = EventStatus.ARCHIVED.value
+                reason = 'Event archived'
             else:
                 return Response({'error': 'Invalid action'}, status=status.HTTP_400_BAD_REQUEST)
             
-            event.save()
+            event.transition_to(
+                next_status,
+                actor=request.user if request.user.is_authenticated else None,
+                reason=reason,
+            )
             
             # Audit the action
             AuditLog.objects.create(
@@ -393,27 +433,8 @@ class HealthCheckView(APIView):
     @extend_schema(responses={200: OpenApiTypes.OBJECT})
     def get(self, request, *args, **kwargs):
         try:
-            health = {
-                'status': 'OPERATIONAL',
-                'database': 'CONNECTED',
-                'services': 'STABLE',
-                'latency': 'OK'
-            }
-            try:
-                from django.db import connection
-                connection.ensure_connection()
-            except Exception as e:
-                import traceback
-                with open('server_error.log', 'a') as f:
-                    f.write(f"DB Connection Error: {str(e)}\n")
-                    f.write(traceback.format_exc())
-                health['database'] = 'ERROR'
-                health['status'] = 'DEGRADED'
-                
-            return Response(health)
+            health, http_status = build_health_report(getattr(request, 'request_id', None))
+            return Response(health, status=http_status)
         except Exception as e:
-            import traceback
-            with open('server_error.log', 'a') as f:
-                f.write(f"HealthCheckView Critical Error: {str(e)}\n")
-                f.write(traceback.format_exc())
+            logger.exception('Health check critical error')
             return Response({'status': 'CRITICAL', 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

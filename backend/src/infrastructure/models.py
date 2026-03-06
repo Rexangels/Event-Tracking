@@ -1,8 +1,11 @@
-from django.db import models
-from django.core.exceptions import ValidationError
-from django.utils import timezone
 import hashlib
 import uuid
+
+from django.conf import settings
+from django.core.exceptions import ValidationError
+from django.db import models
+from django.utils import timezone
+
 from domain.entities import EventSeverity, EventStatus
 
 class EventModel(models.Model):
@@ -25,6 +28,11 @@ class EventModel(models.Model):
         choices=[(tag.value, tag.name) for tag in EventStatus],
         default=EventStatus.PENDING.value
     )
+    source_system = models.CharField(max_length=50, default='sentinel', db_index=True)
+    source_record_type = models.CharField(max_length=50, blank=True, db_index=True)
+    source_record_id = models.CharField(max_length=64, blank=True, db_index=True)
+    source_form_version_id = models.UUIDField(null=True, blank=True)
+    version = models.PositiveIntegerField(default=1)
     
     # Location data (simple floats for GDAL-free environment)
     latitude = models.FloatField(null=True, blank=True, db_index=True)
@@ -41,10 +49,83 @@ class EventModel(models.Model):
         ordering = ['-created_at']
         indexes = [
             models.Index(fields=['latitude', 'longitude'], name='events_coords_idx'),
+            models.Index(fields=['source_system', 'source_record_type'], name='events_source_idx'),
         ]
+
+    parent_event = models.ForeignKey('self', null=True, blank=True, on_delete=models.SET_NULL, related_name='follow_up_events')
+
+    def set_status_context(self, actor=None, reason: str = '', metadata: dict | None = None):
+        self._status_actor = actor if getattr(actor, 'is_authenticated', False) else None
+        self._status_reason = reason or ''
+        self._status_metadata = metadata or {}
+
+    def transition_to(self, new_status: str, actor=None, reason: str = '', metadata: dict | None = None):
+        self.set_status_context(actor=actor, reason=reason, metadata=metadata)
+        self.status = new_status
+        self.save()
+
+    def save(self, *args, **kwargs):
+        previous = None
+        if self.pk:
+            previous = EventModel.objects.filter(pk=self.pk).values('status', 'version').first()
+            if previous:
+                self.version = previous['version'] + 1
+
+        super().save(*args, **kwargs)
+
+        previous_status = previous['status'] if previous else None
+        if previous is None or previous_status != self.status:
+            EventStatusHistory.objects.create(
+                event=self,
+                from_status=previous_status or '',
+                to_status=self.status,
+                changed_by=getattr(self, '_status_actor', None),
+                reason=getattr(self, '_status_reason', ''),
+                metadata=getattr(self, '_status_metadata', {}),
+            )
+
+        for attr in ('_status_actor', '_status_reason', '_status_metadata'):
+            if hasattr(self, attr):
+                delattr(self, attr)
 
     def __str__(self):
         return f"{self.title or 'Untitled'} ({self.status})"
+
+
+class EventStatusHistory(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    event = models.ForeignKey(EventModel, on_delete=models.CASCADE, related_name='status_history')
+    from_status = models.CharField(max_length=20, blank=True)
+    to_status = models.CharField(max_length=20)
+    changed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='event_status_changes')
+    reason = models.TextField(blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    changed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'event_status_history'
+        ordering = ['changed_at']
+
+    def __str__(self):
+        return f"{self.event_id}: {self.from_status or 'created'} -> {self.to_status}"
+
+
+class SyncConflictLog(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    record_type = models.CharField(max_length=50, db_index=True)
+    record_id = models.CharField(max_length=64, db_index=True)
+    client_version = models.PositiveIntegerField()
+    server_version = models.PositiveIntegerField()
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='sync_conflicts')
+    details = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'sync_conflict_logs'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.record_type}:{self.record_id} ({self.client_version} != {self.server_version})"
 
 class MediaModel(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

@@ -11,7 +11,13 @@ class EventReportingService:
         """
         with transaction.atomic():
             # 1. Create Event
-            event = EventModel.objects.create(**data)
+            event = EventModel(
+                source_system='sentinel',
+                source_record_type='event_report',
+                **data,
+            )
+            event.set_status_context(reason='Event reported via public reporting API')
+            event.save()
 
             # 2. Process Files
             media_instances = []

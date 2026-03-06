@@ -1,4 +1,5 @@
 import pytest
+from django.contrib.auth.models import User
 from rest_framework.test import APIClient
 from django.urls import reverse
 from infrastructure.models import EventModel, MediaModel
@@ -10,7 +11,7 @@ import io
 class TestEventReportingAPI:
     def setup_method(self):
         self.client = APIClient()
-        self.url = reverse('event-report-create')
+        self.url = '/api/v1/reports/'
 
     def create_test_image(self):
         file = io.BytesIO()
@@ -40,6 +41,9 @@ class TestEventReportingAPI:
         event = EventModel.objects.first()
         assert event.title == 'Test Hazard'
         assert event.media_attachments.count() == 1
+        assert event.source_record_type == 'event_report'
+        assert event.status_history.count() == 1
+        assert event.status_history.first().to_status == event.status
         
         # Verify metadata extraction (basic check)
         media = event.media_attachments.first()
@@ -54,7 +58,9 @@ class TestBBoxFiltering:
     """
     def setup_method(self):
         self.client = APIClient()
-        self.url = reverse('event-list-admin')
+        self.url = '/api/v1/admin/events/'
+        self.admin = User.objects.create_user(username='report_admin', password='pass1234', is_staff=True)
+        self.client.force_authenticate(user=self.admin)
         
         # Create test events in different locations
         # New York (USA)
@@ -92,10 +98,12 @@ class TestBBoxFiltering:
         
         assert response.status_code == 200
         data = response.json()
+        results = data['results']
         
         # Should only return NYC event
-        assert len(data) == 1
-        assert data[0]['title'] == 'New York Event'
+        assert data['count'] == 1
+        assert len(results) == 1
+        assert results[0]['title'] == 'New York Event'
 
     def test_bbox_filter_europe(self):
         """Test that bbox filter returns only events within Europe."""
@@ -106,10 +114,12 @@ class TestBBoxFiltering:
         
         assert response.status_code == 200
         data = response.json()
+        results = data['results']
         
         # Should only return London event
-        assert len(data) == 1
-        assert data[0]['title'] == 'London Event'
+        assert data['count'] == 1
+        assert len(results) == 1
+        assert results[0]['title'] == 'London Event'
 
     def test_bbox_filter_asia(self):
         """Test that bbox filter returns only events within Asia."""
@@ -120,10 +130,12 @@ class TestBBoxFiltering:
         
         assert response.status_code == 200
         data = response.json()
+        results = data['results']
         
         # Should only return Tokyo event
-        assert len(data) == 1
-        assert data[0]['title'] == 'Tokyo Event'
+        assert data['count'] == 1
+        assert len(results) == 1
+        assert results[0]['title'] == 'Tokyo Event'
 
     def test_no_bbox_returns_all(self):
         """Test that without bbox filter, all events are returned."""
@@ -133,7 +145,8 @@ class TestBBoxFiltering:
         data = response.json()
         
         # Should return all 3 events
-        assert len(data) == 3
+        assert data['count'] == 3
+        assert len(data['results']) == 3
 
     def test_combined_filters(self):
         """Test bbox with severity filter combined."""
@@ -144,7 +157,9 @@ class TestBBoxFiltering:
         
         assert response.status_code == 200
         data = response.json()
+        results = data['results']
         
         # Should only return high severity event (NYC)
-        assert len(data) == 1
-        assert data[0]['severity'] == 'high'
+        assert data['count'] == 1
+        assert len(results) == 1
+        assert results[0]['severity'] == 'high'

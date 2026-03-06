@@ -114,3 +114,20 @@ class UserProfile(models.Model):
     
     def is_public(self):
         return self.role == UserRole.PUBLIC
+
+
+def get_user_role(user) -> str:
+    """Resolve the effective application role for a user."""
+    if not user:
+        return UserRole.PUBLIC
+
+    try:
+        profile = user.profile
+    except UserProfile.DoesNotExist:
+        profile = None
+
+    if profile and profile.role:
+        return profile.role
+    if user.is_superuser or user.is_staff:
+        return UserRole.ADMIN
+    return UserRole.PUBLIC

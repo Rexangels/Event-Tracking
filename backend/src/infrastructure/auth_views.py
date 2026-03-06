@@ -11,8 +11,10 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth.models import User
 from django.db import IntegrityError
-from infrastructure.auth import UserProfile, UserRole
+from infrastructure.auth import UserProfile, UserRole, get_user_role
+from infrastructure.health import build_health_report
 from rest_framework import serializers
+from rest_framework.pagination import PageNumberPagination
 
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
@@ -20,17 +22,19 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     
     def get_token(self, user):
         token = super().get_token(user)
-        
+
         # Add user info to token
+        token['role'] = get_user_role(user)
         try:
             profile = user.profile
-            token['role'] = profile.role
             token['organization'] = profile.organization
         except UserProfile.DoesNotExist:
-            token['role'] = UserRole.PUBLIC
-        
+            token['organization'] = ''
+
         token['username'] = user.username
         token['email'] = user.email
+        token['is_staff'] = user.is_staff
+        token['is_superuser'] = user.is_superuser
         
         return token
 
@@ -42,13 +46,25 @@ class CustomTokenObtainPairView(TokenObtainPairView):
 
 class UserSerializer(serializers.ModelSerializer):
     """Serializer for User model"""
-    role = serializers.CharField(source='profile.role', read_only=True)
-    organization = serializers.CharField(source='profile.organization', read_only=True)
+    role = serializers.SerializerMethodField()
+    organization = serializers.SerializerMethodField()
     
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'role', 'organization', 'date_joined']
+        fields = [
+            'id', 'username', 'email', 'first_name', 'last_name',
+            'role', 'organization', 'is_staff', 'is_superuser', 'date_joined'
+        ]
         read_only_fields = ['id', 'date_joined']
+
+    def get_role(self, obj):
+        return get_user_role(obj)
+
+    def get_organization(self, obj):
+        try:
+            return obj.profile.organization
+        except UserProfile.DoesNotExist:
+            return ''
 
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -118,11 +134,8 @@ class HealthCheckView(viewsets.ViewSet):
     
     def list(self, request):
         """Get system health status"""
-        return Response({
-            'status': 'OPERATIONAL',
-            'database': 'OK',
-            'api': 'OK'
-        }, status=status.HTTP_200_OK)
+        payload, http_status = build_health_report(getattr(request, 'request_id', None))
+        return Response(payload, status=http_status)
 
 
 # Events Endpoint for Admin
@@ -131,24 +144,42 @@ class AdminEventsViewSet(viewsets.ViewSet):
     permission_classes = [IsAdminOrSupervisor]
     
     def list(self, request):
-        """Get all events (admin view)"""
+        """Get paginated events with optional bbox, severity, and status filters."""
         from infrastructure.models import EventModel
-        from rest_framework.serializers import ModelSerializer
-        
-        class EventSerializer(ModelSerializer):
-            class Meta:
-                model = EventModel
-                fields = ['id', 'title', 'description', 'category', 'severity', 'status', 
-                         'latitude', 'longitude', 'accuracy', 'altitude', 'trust_score', 
-                         'created_at', 'updated_at']
-        
-        # Get all events ordered by created_at descending
-        events = EventModel.objects.all().order_by('-created_at')
-        serializer = EventSerializer(events, many=True)
-        
-        return Response({
-            'count': events.count(),
-            'next': None,
-            'previous': None,
-            'results': serializer.data
-        }, status=status.HTTP_200_OK)
+        from interfaces.serializers import EventReportSerializer
+
+        events = EventModel.objects.all()
+
+        bbox_param = request.query_params.get('bbox')
+        if bbox_param:
+            try:
+                coords = [float(value) for value in bbox_param.split(',')]
+                if len(coords) == 4:
+                    min_lon, min_lat, max_lon, max_lat = coords
+                    events = events.filter(
+                        latitude__gte=min_lat,
+                        latitude__lte=max_lat,
+                        longitude__gte=min_lon,
+                        longitude__lte=max_lon,
+                    )
+            except (TypeError, ValueError):
+                pass
+
+        severity = request.query_params.get('severity')
+        if severity:
+            events = events.filter(severity=severity.lower())
+
+        status_filter = request.query_params.get('status')
+        if status_filter:
+            events = events.filter(status=status_filter.lower())
+
+        events = events.order_by('-created_at')
+
+        paginator = PageNumberPagination()
+        paginator.page_size = min(int(request.query_params.get('limit', 100)), 100)
+        page = paginator.paginate_queryset(events, request)
+        serializer = EventReportSerializer(page if page is not None else events, many=True)
+
+        if page is not None:
+            return paginator.get_paginated_response(serializer.data)
+        return Response(serializer.data, status=status.HTTP_200_OK)

@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:map-ops": "node --test scripts/mapOperations.test.mjs scripts/mapOverlays.test.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.38.0",

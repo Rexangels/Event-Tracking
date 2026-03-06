@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { authService } from '../services/authService';
 
@@ -11,8 +11,13 @@ const LoginPage: React.FC = () => {
     const navigate = useNavigate();
     const location = useLocation();
 
-    // Get redirect path from state or default to admin
-    const from = (location.state as { from?: string })?.from || '/admin';
+    const from = (location.state as { from?: string })?.from;
+
+    useEffect(() => {
+        if (authService.isAuthenticated()) {
+            navigate(authService.getDefaultRoute(), { replace: true });
+        }
+    }, [navigate]);
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -21,7 +26,7 @@ const LoginPage: React.FC = () => {
 
         try {
             await authService.login(username, password);
-            navigate(from, { replace: true });
+            navigate(from || authService.getDefaultRoute(), { replace: true });
         } catch (err) {
             setError('Invalid credentials. Please try again.');
         } finally {

@@ -16,20 +16,20 @@ class FormTemplateAdmin(admin.ModelAdmin):
 
 @admin.register(HazardReport)
 class HazardReportAdmin(admin.ModelAdmin):
-    list_display = ['tracking_id', 'form_template', 'status', 'priority', 'created_at']
-    list_filter = ['status', 'priority', 'form_template']
+    list_display = ['tracking_id', 'form_version', 'status', 'priority', 'created_at']
+    list_filter = ['status', 'priority', 'form_version']
     search_fields = ['tracking_id', 'reporter_name', 'address']
     readonly_fields = ['id', 'tracking_id', 'created_at', 'updated_at']
-    raw_id_fields = ['form_template']
+    raw_id_fields = ['form_version']
 
 
 @admin.register(OfficerAssignment)
 class OfficerAssignmentAdmin(admin.ModelAdmin):
     list_display = ['report', 'officer', 'status', 'assigned_at', 'due_date']
-    list_filter = ['status', 'inspection_form']
+    list_filter = ['status', 'form_version']
     search_fields = ['report__tracking_id', 'officer__username']
     readonly_fields = ['id', 'assigned_at', 'completed_at']
-    raw_id_fields = ['report', 'officer', 'inspection_form', 'assigned_by']
+    raw_id_fields = ['report', 'officer', 'form_version', 'assigned_by']
 
 
 @admin.register(FormSubmission)

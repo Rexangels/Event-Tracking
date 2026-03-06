@@ -1,22 +1,21 @@
-"""
-JWT Authentication Middleware for Django Channels
-"""
+"""WebSocket JWT authentication middleware for Django Channels."""
 
-from channels.db import database_sync_to_async
-from django.contrib.auth import get_user_model
-from django.contrib.auth.models import AnonymousUser
-from rest_framework_simplejwt.tokens import AccessToken
 from urllib.parse import parse_qs
 
-User = get_user_model()
+from channels.db import database_sync_to_async
 
 @database_sync_to_async
 def get_user(token_key):
     try:
+        from django.contrib.auth import get_user_model
+        from django.contrib.auth.models import AnonymousUser
+        from rest_framework_simplejwt.tokens import AccessToken
+
         token = AccessToken(token_key)
         user_id = token['user_id']
-        return User.objects.get(id=user_id)
+        return get_user_model().objects.get(id=user_id)
     except Exception:
+        from django.contrib.auth.models import AnonymousUser
         return AnonymousUser()
 
 class JwtAuthMiddleware:
@@ -28,6 +27,8 @@ class JwtAuthMiddleware:
         self.inner = inner
 
     async def __call__(self, scope, receive, send):
+        from django.contrib.auth.models import AnonymousUser
+
         query_string = parse_qs(scope["query_string"].decode())
         token = query_string.get("token")
         

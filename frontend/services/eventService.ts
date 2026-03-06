@@ -15,6 +15,7 @@ export interface BackendEvent {
     media_attachments: any[];
     trust_score: number;
     created_at: string;
+    hazard_report_id?: string;
 }
 
 const mapSeverity = (severity: string): EventSeverity => {
@@ -65,7 +66,8 @@ const transformBackendEvent = (backendEvent: BackendEvent): IntelligenceEvent =>
         verified: backendEvent.status === 'VERIFIED',
         metadata: {
             trust_score: backendEvent.trust_score,
-            media: backendEvent.media_attachments
+            media: backendEvent.media_attachments,
+            hazard_report_id: backendEvent.hazard_report_id
         },
         media_attachments: backendEvent.media_attachments
     };

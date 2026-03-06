@@ -1,4 +1,5 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { IntelligenceEvent } from '../types';
 import { MAP_COLORS, EVENT_ICONS } from '../constants';
 import MediaPlayer from './MediaPlayer';
@@ -12,10 +13,13 @@ interface EventDetailPanelProps {
 }
 
 const EventDetailPanel: React.FC<EventDetailPanelProps> = ({ event, onClose, onStatusUpdate }) => {
+    const navigate = useNavigate();
     const [isEscalating, setIsEscalating] = React.useState(false);
     const [isProcessing, setIsProcessing] = React.useState(false);
 
     if (!event) return null;
+
+    const reportId = event.metadata?.hazard_report_id;
 
     const severityColor = MAP_COLORS[event.severity];
     const eventIcon = EVENT_ICONS[event.type];
@@ -148,6 +152,24 @@ const EventDetailPanel: React.FC<EventDetailPanelProps> = ({ event, onClose, onS
                         </span>
                     </div>
                 </div>
+
+                {/* INEHSS Integration */}
+                {reportId && (
+                    <div className="p-5 border-b border-slate-800/50">
+                        <button
+                            onClick={() => {
+                                navigate(`/inehss/reports/${reportId}`);
+                                onClose();
+                            }}
+                            className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold uppercase tracking-widest rounded-lg flex items-center justify-center gap-2 transition-all shadow-lg hover:shadow-blue-500/20"
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            View Detailed Hazard Report
+                        </button>
+                    </div>
+                )}
 
                 {/* Raw Metadata */}
                 {Object.keys(event.metadata).length > 0 && (

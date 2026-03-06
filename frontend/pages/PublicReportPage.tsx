@@ -19,6 +19,7 @@ const PublicReportPage: React.FC = () => {
 
     // Track report state
     const [trackingId, setTrackingId] = useState('');
+    const [parentTrackingId, setParentTrackingId] = useState('');
     const [trackResult, setTrackResult] = useState<{ status: string; created_at: string } | null>(null);
     const [showTracker, setShowTracker] = useState(false);
 
@@ -58,9 +59,11 @@ const PublicReportPage: React.FC = () => {
         setError(null);
         try {
             const result = await submitPublicReport(
-                selectedForm.id,
+                selectedForm.version_id!,
                 data,
-                location ? { latitude: location.latitude, longitude: location.longitude } : undefined
+                location ? { latitude: location.latitude, longitude: location.longitude } : undefined,
+                undefined, // reporter info is not captured explicitly in this simple form
+                parentTrackingId.trim() || undefined
             );
             setSubmissionResult(result);
         } catch (err: any) {
@@ -173,8 +176,8 @@ const PublicReportPage: React.FC = () => {
                                 <div className="flex items-center justify-between mb-2">
                                     <span className="text-slate-400">Status</span>
                                     <span className={`px-3 py-1 rounded-full text-sm font-medium ${trackResult.status === 'resolved' ? 'bg-green-500/20 text-green-400' :
-                                            trackResult.status === 'in_progress' ? 'bg-blue-500/20 text-blue-400' :
-                                                'bg-yellow-500/20 text-yellow-400'
+                                        trackResult.status === 'in_progress' ? 'bg-blue-500/20 text-blue-400' :
+                                            'bg-yellow-500/20 text-yellow-400'
                                         }`}>
                                         {trackResult.status.replace('_', ' ').toUpperCase()}
                                     </span>
@@ -203,11 +206,27 @@ const PublicReportPage: React.FC = () => {
                         </button>
                         <h2 className="text-xl font-bold text-white mb-2">{selectedForm.name}</h2>
                         <p className="text-slate-400 mb-6">{selectedForm.description}</p>
+
+                        <div className="bg-slate-800/30 border border-slate-700 mx-auto rounded-lg p-4 mb-6">
+                            <label className="block text-sm font-medium text-slate-300 mb-2">
+                                Is this a follow-up? (Optional)
+                            </label>
+                            <input
+                                type="text"
+                                placeholder="Previous Tracking ID (e.g., INH-2026...)"
+                                value={parentTrackingId}
+                                onChange={(e) => setParentTrackingId(e.target.value)}
+                                className="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-green-500"
+                            />
+                            <p className="text-xs text-slate-500 mt-2">If this report is related to a previous one, enter its ID.</p>
+                        </div>
                         <DynamicFormRenderer
                             schema={selectedForm.schema}
                             onSubmit={handleSubmit}
                             isSubmitting={isSubmitting}
                             onLocationChange={setLocation}
+                            showGpsField={selectedForm.geo_mode !== 'disabled'}
+                            requireLocation={selectedForm.geo_mode === 'auto'}
                         />
                     </div>
                 ) : (

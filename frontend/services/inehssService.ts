@@ -7,6 +7,12 @@ import axios from 'axios';
 
 const API_BASE = 'http://localhost:8000/api/v1/inehss';
 
+export interface FieldCondition {
+    field: string;
+    operator: 'equals' | 'not_equals' | 'contains' | 'not_empty' | 'is_empty' | 'greater_than' | 'less_than';
+    value?: string | number | boolean;
+}
+
 export interface FormField {
     name: string;
     type: 'text' | 'textarea' | 'number' | 'select' | 'multiselect' | 'checkbox' | 'radio' | 'date' | 'gps' | 'file';
@@ -15,6 +21,7 @@ export interface FormField {
     options?: Array<{ value: string; label: string }>;
     placeholder?: string;
     helpText?: string;
+    conditions?: FieldCondition[];
 }
 
 export interface FormTemplate {
@@ -22,6 +29,12 @@ export interface FormTemplate {
     name: string;
     description: string;
     form_type: 'public' | 'officer';
+    geo_mode: 'disabled' | 'manual' | 'auto';
+    version_id?: string;
+    version_number?: number;
+    follow_up_for?: string | null;
+    follow_up_for_name?: string | null;
+    is_follow_up?: boolean;
     schema: FormField[];
     is_active: boolean;
     created_at: string;
@@ -30,7 +43,15 @@ export interface FormTemplate {
 export interface HazardReport {
     id: string;
     tracking_id: string;
-    form_template: FormTemplate;
+    form_version: {
+        id: string;
+        template_id?: string;
+        version_number: number;
+        template_name: string;
+        schema?: any[];
+        geo_mode?: 'disabled' | 'manual' | 'auto';
+    };
+    parent_report?: string | null;
     data: Record<string, any>;
     latitude: number | null;
     longitude: number | null;
@@ -40,6 +61,29 @@ export interface HazardReport {
     reporter_name: string;
     reporter_phone: string;
     reporter_email: string;
+    assigned_officer?: string | null;
+    assignment_count?: number;
+    report_origin?: {
+        code: 'public' | 'patrol' | 'follow_up' | 'unknown';
+        label: string;
+        description: string;
+    };
+    lineage?: {
+        lineage_status: 'linked' | 'heuristic_only';
+        is_patrol_generated: boolean;
+        origin_assignment_id: string | null;
+        origin_submission_id: string | null;
+        origin_officer_username: string | null;
+        origin_assignment_status: string | null;
+        origin_assignment_is_persistent: boolean | null;
+        origin_assignment_assigned_at: string | null;
+        origin_submission_timestamp: string | null;
+        origin_submission_version: number | null;
+        origin_submission_is_draft: boolean | null;
+        origin_submission_submitted_by: string | null;
+    } | null;
+    attachments?: MediaAttachment[];
+    event_id?: string | null;
     created_at: string;
     updated_at: string;
 }
@@ -48,7 +92,16 @@ export interface OfficerAssignment {
     id: string;
     report: HazardReport;
     officer_username: string;
-    inspection_form: FormTemplate;
+    form_version: {
+        id: string;
+        template_id?: string;
+        version_number: number;
+        template_name: string;
+        schema?: any[];
+        geo_mode?: 'disabled' | 'manual' | 'auto';
+        is_latest?: boolean;
+        follow_up_for?: string | null;
+    };
     status: string;
     progress_percent?: number;
     escalation_level?: 'none' | 'low' | 'medium' | 'high' | 'critical';
@@ -65,10 +118,41 @@ export interface ReportFilters {
     priority?: string;
     status?: string;
     search?: string;
+    parent_report?: string;
+    form_template?: string;
+    template_id?: string;
+    form_version?: string;
+    assigned_officer?: string;
+    officer?: string;
+    created_from?: string;
+    created_to?: string;
+    has_attachments?: boolean;
+    event_id?: string;
     min_lat?: number;
     max_lat?: number;
     min_lon?: number;
     max_lon?: number;
+}
+
+export interface AssignmentFilters {
+    report?: string;
+    officer_username?: string;
+    status?: string;
+}
+
+export interface ReportTimelineItem {
+    timestamp: string;
+    source_type: 'report_status' | 'assignment_status' | 'submission' | 'follow_up_report_status' | 'event_status';
+    source_id: string;
+    title: string;
+    actor: string | null;
+    metadata: Record<string, any>;
+}
+
+export interface ReportTimelineResponse {
+    report_id: string;
+    tracking_id: string;
+    timeline: ReportTimelineItem[];
 }
 
 // === Public API ===
@@ -84,13 +168,14 @@ export async function getFormSchema(formId: string): Promise<FormTemplate> {
 }
 
 export async function submitPublicReport(
-    formTemplateId: string,
+    formVersionId: string,
     data: Record<string, any>,
     location?: { latitude: number; longitude: number; address?: string },
-    reporter?: { name?: string; phone?: string; email?: string }
+    reporter?: { name?: string; phone?: string; email?: string },
+    parentTrackingId?: string
 ): Promise<{ tracking_id: string; message: string }> {
-    const payload = {
-        form_template: formTemplateId,
+    const payload: any = {
+        form_version: formVersionId,
         data,
         latitude: location?.latitude,
         longitude: location?.longitude,
@@ -99,6 +184,9 @@ export async function submitPublicReport(
         reporter_phone: reporter?.phone || '',
         reporter_email: reporter?.email || '',
     };
+    if (parentTrackingId) {
+        payload.parent_tracking_id = parentTrackingId;
+    }
     const response = await axios.post(`${API_BASE}/reports/`, payload);
     return response.data;
 }
@@ -152,6 +240,22 @@ export async function getReports(token: string, filters?: ReportFilters): Promis
     });
     const data = response.data;
     return Array.isArray(data) ? data : (data?.results || []);
+}
+
+export async function getAssignments(token: string, filters?: AssignmentFilters): Promise<OfficerAssignment[]> {
+    const response = await axios.get(`${API_BASE}/assignments/`, {
+        headers: { Authorization: `Bearer ${token}` },
+        params: filters,
+    });
+    const data = response.data;
+    return Array.isArray(data) ? data : (data?.results || []);
+}
+
+export async function getReportTimeline(reportId: string, token: string): Promise<ReportTimelineResponse> {
+    const response = await axios.get(`${API_BASE}/reports/${reportId}/timeline/`, {
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    return response.data;
 }
 
 
@@ -248,5 +352,12 @@ export async function uploadAttachment(
     }
 
     const response = await axios.post(`${API_BASE}/attachments/`, formData, { headers });
+    return response.data;
+}
+
+export async function upgradeAssignmentVersion(assignmentId: string, token: string): Promise<any> {
+    const response = await axios.post(`${API_BASE}/assignments/${assignmentId}/upgrade_version/`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+    });
     return response.data;
 }

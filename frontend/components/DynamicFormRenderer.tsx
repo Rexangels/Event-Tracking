@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { FormField } from '../services/inehssService';
+import { FormField, FieldCondition } from '../services/inehssService';
 import LocationPicker from './LocationPicker';
 
 interface DynamicFormRendererProps {
@@ -80,9 +80,41 @@ const DynamicFormRenderer: React.FC<DynamicFormRendererProps> = ({
         }
     };
 
+    // === Skip Logic: Condition Evaluation ===
+    const evaluateCondition = (condition: FieldCondition, data: Record<string, any>): boolean => {
+        const fieldValue = data[condition.field];
+        switch (condition.operator) {
+            case 'equals':
+                return String(fieldValue) === String(condition.value);
+            case 'not_equals':
+                return String(fieldValue) !== String(condition.value);
+            case 'contains':
+                return Array.isArray(fieldValue)
+                    ? fieldValue.includes(condition.value)
+                    : String(fieldValue || '').toLowerCase().includes(String(condition.value || '').toLowerCase());
+            case 'not_empty':
+                return fieldValue !== undefined && fieldValue !== null && fieldValue !== '';
+            case 'is_empty':
+                return fieldValue === undefined || fieldValue === null || fieldValue === '';
+            case 'greater_than':
+                return Number(fieldValue) > Number(condition.value);
+            case 'less_than':
+                return Number(fieldValue) < Number(condition.value);
+            default:
+                return true;
+        }
+    };
+
+    const isFieldVisible = (field: FormField): boolean => {
+        if (!field.conditions || field.conditions.length === 0) return true;
+        return field.conditions.every(c => evaluateCondition(c, formData));
+    };
+
     const validate = (): boolean => {
         const newErrors: Record<string, string> = {};
         schema.forEach(field => {
+            // Skip validation for hidden fields
+            if (!isFieldVisible(field)) return;
             if (field.required && !formData[field.name]) {
                 newErrors[field.name] = `${field.label} is required`;
             }
@@ -289,18 +321,21 @@ const DynamicFormRenderer: React.FC<DynamicFormRendererProps> = ({
                             setLocationError(null);
                         }}
                     />
-                {locationError && <p className="text-xs text-red-400 mt-2">{locationError}</p>}
+                    {locationError && <p className="text-xs text-red-400 mt-2">{locationError}</p>}
                     {gettingLocation && <p className="text-xs text-slate-400 mt-2">Fetching device GPS…</p>}
                 </div>
             )}
 
             {/* Dynamic Fields */}
-            {schema.map(field => (
-                <div key={field.name} className="space-y-2">
+            {schema.filter(isFieldVisible).map(field => (
+                <div key={field.name} className="space-y-2" style={{ animation: 'fadeSlideIn 0.25s ease-out' }}>
                     {field.type !== 'checkbox' && (
                         <label className="block text-sm font-medium text-slate-300">
                             {field.label}
                             {field.required && <span className="text-red-400 ml-1">*</span>}
+                            {field.conditions && field.conditions.length > 0 && (
+                                <span className="ml-2 text-[10px] text-blue-400/60 font-normal">conditional</span>
+                            )}
                         </label>
                     )}
                     {renderField(field)}
