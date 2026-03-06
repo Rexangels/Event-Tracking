@@ -152,7 +152,7 @@ class AuditLog(models.Model):
     details = models.TextField(blank=True, null=True)
     ip_address = models.GenericIPAddressField(null=True, blank=True)
     prev_hash = models.CharField(max_length=64, editable=False, db_index=True, default='0' * 64)
-    entry_hash = models.CharField(max_length=64, editable=False, unique=True, db_index=True)
+    entry_hash = models.CharField(max_length=64, editable=False, unique=True)
     timestamp = models.DateTimeField(auto_now_add=True)
 
     class Meta:
