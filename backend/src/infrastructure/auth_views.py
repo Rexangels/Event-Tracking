@@ -10,6 +10,7 @@ from infrastructure.permissions import IsAdminOrSupervisor
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from django.db import IntegrityError
 from infrastructure.auth import UserProfile, UserRole, get_user_role
 from infrastructure.health import build_health_report
@@ -19,6 +20,16 @@ from rest_framework.pagination import PageNumberPagination
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     """Custom JWT serializer with user role information"""
+
+    def validate(self, attrs):
+        identifier = attrs.get(self.username_field)
+        if isinstance(identifier, str) and '@' in identifier:
+            user_model = get_user_model()
+            matched_user = user_model.objects.filter(email__iexact=identifier.strip()).order_by('id').first()
+            if matched_user:
+                attrs = {**attrs, self.username_field: matched_user.get_username()}
+
+        return super().validate(attrs)
     
     def get_token(self, user):
         token = super().get_token(user)

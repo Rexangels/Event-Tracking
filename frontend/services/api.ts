@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { ensureValidAccessToken, refreshAccessToken } from './authSession.js';
 
 const api = axios.create({
     baseURL: `${import.meta.env.VITE_API_BASE_URL || ''}/api/v1`,
@@ -7,17 +8,46 @@ const api = axios.create({
     },
 });
 
-api.interceptors.request.use((config) => {
-    const token = localStorage.getItem('authToken');
+const isAuthRequest = (url?: string) => Boolean(url && /\/auth\/(login|refresh)\/?$/.test(url));
+
+api.interceptors.request.use(async (config) => {
+    if (isAuthRequest(config.url)) {
+        return config;
+    }
+
+    const existingHeader = typeof config.headers?.Authorization === 'string'
+        ? config.headers.Authorization
+        : typeof config.headers?.authorization === 'string'
+            ? config.headers.authorization
+            : null;
+    const existingToken = existingHeader?.startsWith('Bearer ')
+        ? existingHeader.slice(7)
+        : null;
+    const token = await ensureValidAccessToken(existingToken);
+
     if (token) {
         config.headers.Authorization = `Bearer ${token}`;
     }
+
     return config;
 });
 
 api.interceptors.response.use(
     (response) => response,
-    (error) => {
+    async (error) => {
+        const originalRequest = error.config as (typeof error.config & { _retry?: boolean }) | undefined;
+
+        if (error.response?.status === 401 && originalRequest && !originalRequest._retry && !isAuthRequest(originalRequest.url)) {
+            originalRequest._retry = true;
+            const refreshedToken = await refreshAccessToken();
+
+            if (refreshedToken) {
+                originalRequest.headers = originalRequest.headers || {};
+                originalRequest.headers.Authorization = `Bearer ${refreshedToken}`;
+                return api(originalRequest);
+            }
+        }
+
         if (error.response?.status === 429) {
             console.error('SYSTEM_THROTTLED: Rate limit exceeded. Refer to enterprise security policy.');
             // This can be used to trigger a global notification in an actual app

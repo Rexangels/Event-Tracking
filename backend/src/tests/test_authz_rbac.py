@@ -4,7 +4,7 @@ from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import AccessToken
 
 from infrastructure.auth import UserProfile, UserRole
-from inehss.models import FormTemplate, FormVersion, HazardReport
+from inehss.models import FormTemplate, FormVersion, HazardReport, OfficerAssignment
 
 
 @pytest.mark.django_db
@@ -13,9 +13,13 @@ class TestRBACGuards:
         self.client = APIClient()
         self.admin = User.objects.create_user(username='admin_rbac', password='pass1234', is_staff=True)
         self.officer = User.objects.create_user(username='officer_rbac', password='pass1234')
+        self.staff_officer = User.objects.create_user(username='staff_officer_rbac', email='staff.officer@example.com', password='pass1234', is_staff=True)
+        self.other_officer = User.objects.create_user(username='other_officer_rbac', password='pass1234')
         self.supervisor = User.objects.create_user(username='supervisor_rbac', password='pass1234')
 
         UserProfile.objects.create(user=self.officer, role=UserRole.OFFICER)
+        UserProfile.objects.create(user=self.staff_officer, role=UserRole.OFFICER)
+        UserProfile.objects.create(user=self.other_officer, role=UserRole.OFFICER)
         UserProfile.objects.create(user=self.supervisor, role=UserRole.SUPERVISOR)
 
         self.public_form = FormTemplate.objects.create(
@@ -123,3 +127,39 @@ class TestRBACGuards:
         assert me_response.status_code == 200
         assert me_response.data['role'] == UserRole.OFFICER
         assert me_response.data['is_staff'] is False
+
+    def test_officer_login_accepts_email_identifier(self):
+        unauthenticated_client = APIClient()
+
+        response = unauthenticated_client.post(
+            '/api/v1/auth/login/',
+            {'username': 'staff.officer@example.com', 'password': 'pass1234'},
+            format='json',
+        )
+
+        assert response.status_code == 200
+        access_token = AccessToken(response.data['access'])
+        assert access_token['role'] == UserRole.OFFICER
+        assert access_token['email'] == 'staff.officer@example.com'
+
+    def test_officer_with_staff_flag_only_sees_own_assignments(self):
+        own_assignment = OfficerAssignment.objects.create(
+            report=self.report,
+            officer=self.staff_officer,
+            form_version=self.officer_version,
+            assigned_by=self.admin,
+        )
+        other_assignment = OfficerAssignment.objects.create(
+            report=self.report,
+            officer=self.other_officer,
+            form_version=self.officer_version,
+            assigned_by=self.admin,
+        )
+
+        self.client.force_authenticate(user=self.staff_officer)
+        response = self.client.get('/api/v1/inehss/assignments/')
+
+        assert response.status_code == 200
+        assignment_ids = {str(item['id']) for item in response.data.get('results', response.data)}
+        assert str(own_assignment.id) in assignment_ids
+        assert str(other_assignment.id) not in assignment_ids

@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import DynamicFormRenderer from '../components/DynamicFormRenderer';
 import {
     getMyAssignments,
@@ -17,13 +18,10 @@ import {
     upgradeAssignmentVersion,
     OfficerAssignment
 } from '../services/inehssService';
+import { authService } from '../services/authService';
 
-interface OfficerDashboardProps {
-    authToken: string;
-    userName: string;
-}
-
-const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName }) => {
+const OfficerDashboard: React.FC = () => {
+    const navigate = useNavigate();
     const [assignments, setAssignments] = useState<OfficerAssignment[]>([]);
     const [selectedAssignment, setSelectedAssignment] = useState<OfficerAssignment | null>(null);
     const [isLoading, setIsLoading] = useState(true);
@@ -37,17 +35,28 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
     const [escalationModalAssignmentId, setEscalationModalAssignmentId] = useState<string | null>(null);
     const [escalationLevel, setEscalationLevel] = useState<'low' | 'medium' | 'high' | 'critical'>('high');
     const [escalationReason, setEscalationReason] = useState('');
+    const currentUserId = authService.getUser()?.id ?? null;
+    const userName = authService.getUser()?.username || 'Officer';
+
+    const getAuthToken = () => authService.getToken() || '';
 
 
 
     useEffect(() => {
+        setAssignments([]);
+        setSelectedAssignment(null);
         loadAssignments();
-    }, []);
+    }, [currentUserId]);
+
+    const handleLogout = () => {
+        authService.logout();
+        navigate('/login', { replace: true });
+    };
 
     const loadAssignments = async () => {
         setIsLoading(true);
         try {
-            const response = await getMyAssignments(authToken);
+            const response = await getMyAssignments(getAuthToken());
             // Handle paginated response
             const data = response as any;
             const assignmentsList = Array.isArray(data) ? data : (data?.results || []);
@@ -62,7 +71,7 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
 
     const handleAccept = async (assignmentId: string) => {
         try {
-            await acceptAssignment(assignmentId, authToken);
+            await acceptAssignment(assignmentId, getAuthToken());
             await loadAssignments();
             setSuccessMessage('Assignment accepted!');
             setTimeout(() => setSuccessMessage(null), 3000);
@@ -73,7 +82,7 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
 
     const handleStart = async (assignmentId: string) => {
         try {
-            await startAssignment(assignmentId, authToken);
+            await startAssignment(assignmentId, getAuthToken());
             await loadAssignments();
             setSuccessMessage('Assignment marked in progress.');
             setTimeout(() => setSuccessMessage(null), 3000);
@@ -84,7 +93,7 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
 
     const handleSubmitForReview = async (assignmentId: string) => {
         try {
-            await submitAssignmentForReview(assignmentId, authToken);
+            await submitAssignmentForReview(assignmentId, getAuthToken());
             await loadAssignments();
             setSuccessMessage('Assignment submitted for review.');
             setTimeout(() => setSuccessMessage(null), 3000);
@@ -104,7 +113,7 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
         }
 
         try {
-            await escalateAssignment(escalationModalAssignmentId, escalationLevel, reason, authToken);
+            await escalateAssignment(escalationModalAssignmentId, escalationLevel, reason, getAuthToken());
             await loadAssignments();
             setSuccessMessage('Assignment escalated.');
             setEscalationModalAssignmentId(null);
@@ -121,6 +130,7 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
 
         setIsSubmitting(true);
         try {
+            const authToken = getAuthToken();
             // Separte files from data
             const cleanData = { ...data };
             const filesToUpload: File[] = [];
@@ -145,17 +155,17 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
             // If persistent, skip completion so assignment stays open
             if (!selectedAssignment.is_persistent) {
                 await completeAssignment(selectedAssignment.id, authToken);
-                setSuccessMessage('Inspection submitted successfully!');
+                setSuccessMessage('Report submitted successfully!');
                 setSelectedAssignment(null);
             } else {
-                setSuccessMessage('Submission recorded! Form cleared for next patrol record.');
+                setSuccessMessage('Submission recorded! Form cleared for the next report entry.');
                 // Optionally clear initial data if the renderer doesn't
             }
 
             await loadAssignments();
         } catch (err) {
             console.error(err);
-            setError('Failed to submit inspection');
+            setError('Failed to submit report');
         } finally {
             setIsSubmitting(false);
         }
@@ -223,6 +233,16 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
                             </svg>
                             Back to Dashboard
                         </button>
+                        <button
+                            onClick={handleLogout}
+                            className="inline-flex items-center gap-2 px-3 py-2 bg-slate-700 hover:bg-red-600/80 text-slate-200 hover:text-white rounded-lg transition-all"
+                            title="Log out"
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H9m4 4v1a2 2 0 01-2 2H6a2 2 0 01-2-2V7a2 2 0 012-2h5a2 2 0 012 2v1" />
+                            </svg>
+                            Logout
+                        </button>
                     </div>
                 </header>
 
@@ -261,10 +281,10 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
                                 <svg className="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-1.447-.894L15 9m0 11V9" />
                                 </svg>
-                                Patrol Strategy: General Inspection
+                                Patrol Strategy: General Reporting
                             </h3>
                             <p className="text-sm text-slate-400">
-                                This is a persistent patrol assignment. You can record multiple inspections at different locations using this form.
+                                This is a persistent patrol assignment. You can record multiple reports at different locations using this form.
                             </p>
                             {selectedAssignment.notes && (
                                 <div className="mt-4 pt-4 border-t border-purple-500/20">
@@ -275,7 +295,7 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
                         </div>
                     )}
 
-                    {/* Inspection Form */}
+                    {/* Report Form */}
                     <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6">
                         <h2 className="text-xl font-bold text-white mb-2">{selectedAssignment.form_version.template_name}</h2>
                         <div className="flex items-center gap-3 mb-6">
@@ -305,6 +325,7 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
                                     <button
                                         onClick={async () => {
                                             try {
+                                                const authToken = getAuthToken();
                                                 await upgradeAssignmentVersion(selectedAssignment.id, authToken);
                                                 setSuccessMessage('Upgraded to the latest form version!');
                                                 // Reload assignments and re-select the upgraded one
@@ -332,7 +353,7 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
                             onSubmit={handleSubmitInspection}
                             onSaveDraft={handleSaveDraft}
                             isSubmitting={isSubmitting}
-                            submitLabel="Submit Inspection Report"
+                            submitLabel="Submit Report"
                             onLocationChange={setLocation}
                             showGpsField={selectedAssignment.form_version.geo_mode !== 'disabled'}
                             requireLocation={selectedAssignment.form_version.geo_mode === 'auto'}
@@ -359,15 +380,27 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
                             <p className="text-xs text-slate-400">Welcome, {userName}</p>
                         </div>
                     </div>
-                    <button
-                        onClick={loadAssignments}
-                        className="p-2 bg-slate-700 hover:bg-slate-600 rounded-lg transition-all"
-                        title="Refresh"
-                    >
-                        <svg className="w-5 h-5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                        </svg>
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={loadAssignments}
+                            className="p-2 bg-slate-700 hover:bg-slate-600 rounded-lg transition-all"
+                            title="Refresh"
+                        >
+                            <svg className="w-5 h-5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                        </button>
+                        <button
+                            onClick={handleLogout}
+                            className="inline-flex items-center gap-2 px-3 py-2 bg-slate-700 hover:bg-red-600/80 text-slate-200 hover:text-white rounded-lg transition-all"
+                            title="Log out"
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H9m4 4v1a2 2 0 01-2 2H6a2 2 0 01-2-2V7a2 2 0 012-2h5a2 2 0 012 2v1" />
+                            </svg>
+                            Logout
+                        </button>
+                    </div>
                 </div>
             </header>
 
@@ -505,7 +538,7 @@ const OfficerDashboard: React.FC<OfficerDashboardProps> = ({ authToken, userName
                                                 onClick={() => setSelectedAssignment(assignment)}
                                                 className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm transition-all"
                                             >
-                                                Start Inspection
+                                                Open Report
                                             </button>
                                         )}
                                         {['in_progress', 'revision_needed'].includes(assignment.status) && (

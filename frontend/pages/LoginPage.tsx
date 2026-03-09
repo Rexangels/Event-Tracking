@@ -4,7 +4,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { authService } from '../services/authService';
 
 const LoginPage: React.FC = () => {
-    const [username, setUsername] = useState('');
+    const [identifier, setIdentifier] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -12,6 +12,23 @@ const LoginPage: React.FC = () => {
     const location = useLocation();
 
     const from = (location.state as { from?: string })?.from;
+
+    const getPostLoginRoute = () => {
+        const fallbackRoute = authService.getDefaultRoute();
+        if (!from || from === '/login') {
+            return fallbackRoute;
+        }
+
+        if (from.startsWith('/admin') && !authService.hasAnyRole(['admin', 'supervisor', 'analyst'])) {
+            return fallbackRoute;
+        }
+
+        if (from.startsWith('/inehss/officer') && !authService.hasAnyRole(['officer'])) {
+            return fallbackRoute;
+        }
+
+        return from;
+    };
 
     useEffect(() => {
         if (authService.isAuthenticated()) {
@@ -25,8 +42,8 @@ const LoginPage: React.FC = () => {
         setIsLoading(true);
 
         try {
-            await authService.login(username, password);
-            navigate(from || authService.getDefaultRoute(), { replace: true });
+            await authService.login(identifier, password);
+            navigate(getPostLoginRoute(), { replace: true });
         } catch (err) {
             setError('Invalid credentials. Please try again.');
         } finally {
@@ -51,14 +68,14 @@ const LoginPage: React.FC = () => {
                 <form onSubmit={handleLogin} className="space-y-6">
                     <div>
                         <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">
-                            Username
+                            Username or Email
                         </label>
                         <input
                             type="text"
-                            value={username}
-                            onChange={(e) => setUsername(e.target.value)}
+                            value={identifier}
+                            onChange={(e) => setIdentifier(e.target.value)}
                             className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500 transition-colors"
-                            placeholder="Enter your username"
+                            placeholder="Enter your username or email"
                             required
                         />
                     </div>

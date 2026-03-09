@@ -36,6 +36,13 @@ def _is_admin_or_supervisor(user):
     return bool(user and user.is_authenticated and (user.is_staff or user.is_superuser or _user_role(user) in {UserRole.ADMIN, UserRole.SUPERVISOR}))
 
 
+def _has_assignment_read_access(user):
+    role = _user_role(user)
+    if role == UserRole.OFFICER:
+        return False
+    return bool(user and user.is_authenticated and (user.is_staff or user.is_superuser or role in {UserRole.ADMIN, UserRole.SUPERVISOR, UserRole.ANALYST}))
+
+
 def _can_read_reports(user):
     return bool(user and user.is_authenticated and (user.is_staff or user.is_superuser or _user_role(user) in {UserRole.ADMIN, UserRole.SUPERVISOR, UserRole.ANALYST, UserRole.OFFICER}))
 
@@ -380,14 +387,14 @@ class OfficerAssignmentViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         user = self.request.user
-        queryset = OfficerAssignment.objects.all() if user.is_staff else OfficerAssignment.objects.filter(officer=user)
+        queryset = OfficerAssignment.objects.all() if _has_assignment_read_access(user) else OfficerAssignment.objects.filter(officer=user)
         report_id = self.request.query_params.get('report')
         if report_id:
             queryset = queryset.filter(Q(report_id=report_id) | Q(generated_reports__id=report_id)).distinct()
         return queryset
 
     def _ensure_owner_or_staff(self, assignment, request):
-        return assignment.officer == request.user or request.user.is_staff
+        return assignment.officer == request.user or _is_admin_or_supervisor(request.user)
 
     def create(self, request, *args, **kwargs):
         if not _is_admin_or_supervisor(request.user):
@@ -625,7 +632,7 @@ class FormSubmissionViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         user = self.request.user
-        if user.is_staff:
+        if _has_assignment_read_access(user):
             return FormSubmission.objects.all()
         return FormSubmission.objects.filter(submitted_by=user)
     
@@ -634,7 +641,7 @@ class FormSubmissionViewSet(viewsets.ModelViewSet):
         assignment_id = request.data.get('assignment')
         try:
             assignment = OfficerAssignment.objects.get(id=assignment_id)
-            if assignment.officer != request.user and not request.user.is_staff:
+            if assignment.officer != request.user and not _is_admin_or_supervisor(request.user):
                 return Response({'error': 'Not your assignment'}, status=status.HTTP_403_FORBIDDEN)
             conflict_response = _version_conflict_response(request, assignment, 'officer_assignment')
             if conflict_response:

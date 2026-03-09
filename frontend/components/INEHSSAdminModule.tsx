@@ -14,9 +14,13 @@ import {
     requestAssignmentRevision,
     reassignAssignment,
 } from '../services/inehssService';
+import { authService } from '../services/authService';
+import { getAuthorizedHeaders } from '../services/authSession.js';
+import { moveFormField, normalizeFieldName, removeFormFieldAndReferences, updateFormFieldWithReferenceSync } from '../utils/formBuilderUtils.js';
 import Tooltip from './ui/Tooltip';
 
 type HazardReportAdmin = HazardReport;
+type FormBuilderField = FormField & { _builderId: string };
 
 interface Officer {
     id: number;
@@ -26,6 +30,13 @@ interface Officer {
 
 const API_BASE = `${import.meta.env.VITE_API_BASE_URL || ''}/api/v1`;
 const INEHSS_ACTIVE_TAB_KEY = 'inehssActiveTab';
+
+const createFormBuilderFieldId = () => `builder_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+const toFormBuilderField = (field: FormField): FormBuilderField => ({
+    ...field,
+    _builderId: createFormBuilderFieldId(),
+});
+const stripFormBuilderField = ({ _builderId, ...field }: FormBuilderField): FormField => field;
 
 type INEHSSTab = 'forms' | 'reports' | 'assignments' | 'officers';
 
@@ -44,6 +55,82 @@ interface OfficerAssignment {
     escalation_reason?: string;
     progress_percent?: number;
 }
+
+type MapIconName = 'warning' | 'alert' | 'biohazard' | 'radiation' | 'info';
+
+const DEFAULT_MAP_ICON: MapIconName = 'warning';
+const DEFAULT_MAP_COLOR = '#f97316';
+const DEFAULT_EVENT_CATEGORY = 'environmental_hazard';
+const MAP_ICON_OPTIONS: Array<{ value: MapIconName; label: string }> = [
+    { value: 'warning', label: 'Warning (Triangle)' },
+    { value: 'alert', label: 'Alert (Circle)' },
+    { value: 'biohazard', label: 'Biohazard' },
+    { value: 'radiation', label: 'Radiation' },
+    { value: 'info', label: 'Info' },
+];
+
+const isMapIconName = (value?: string | null): value is MapIconName => (
+    MAP_ICON_OPTIONS.some(option => option.value === value)
+);
+
+const MapIconGlyph: React.FC<{ icon: MapIconName; color: string; className?: string }> = ({
+    icon,
+    color,
+    className = 'w-5 h-5',
+}) => {
+    const strokeProps = { stroke: color, strokeWidth: 1.8, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
+
+    switch (icon) {
+        case 'alert':
+            return (
+                <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <circle cx="12" cy="12" r="9" fill={color} opacity="0.16" />
+                    <circle cx="12" cy="12" r="9" {...strokeProps} />
+                    <path d="M12 7.5v6" {...strokeProps} />
+                    <circle cx="12" cy="16.5" r="1" fill={color} />
+                </svg>
+            );
+        case 'biohazard':
+            return (
+                <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <circle cx="12" cy="12" r="2.2" fill={color} />
+                    <circle cx="12" cy="6.5" r="2.3" fill={color} opacity="0.18" {...strokeProps} />
+                    <circle cx="7.25" cy="15" r="2.3" fill={color} opacity="0.18" {...strokeProps} />
+                    <circle cx="16.75" cy="15" r="2.3" fill={color} opacity="0.18" {...strokeProps} />
+                    <path d="M11.1 8.5 8.7 12.2m4.2-3.7 2.4 3.7m-5.6 1.9h4.6" {...strokeProps} />
+                </svg>
+            );
+        case 'radiation':
+            return (
+                <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <circle cx="12" cy="12" r="2.2" fill={color} />
+                    <path d="M12 4.2l2.2 4.6a4.8 4.8 0 0 0-4.4 0L12 4.2Z" fill={color} opacity="0.2" {...strokeProps} />
+                    <path d="M5.6 16.4 10.4 15a4.8 4.8 0 0 0 0-5L5.6 16.4Z" fill={color} opacity="0.2" {...strokeProps} />
+                    <path d="M18.4 16.4 13.6 15a4.8 4.8 0 0 1 0-5l4.8 6.4Z" fill={color} opacity="0.2" {...strokeProps} />
+                    <circle cx="12" cy="12" r="8.5" {...strokeProps} opacity="0.6" />
+                </svg>
+            );
+        case 'info':
+            return (
+                <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <circle cx="12" cy="12" r="9" fill={color} opacity="0.16" />
+                    <circle cx="12" cy="12" r="9" {...strokeProps} />
+                    <path d="M12 10.5v5" {...strokeProps} />
+                    <circle cx="12" cy="7.5" r="1" fill={color} />
+                </svg>
+            );
+        case 'warning':
+        default:
+            return (
+                <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M12 3 2.8 19a1 1 0 0 0 .87 1.5h16.66a1 1 0 0 0 .87-1.5L12 3Z" fill={color} opacity="0.16" />
+                    <path d="M12 3 2.8 19a1 1 0 0 0 .87 1.5h16.66a1 1 0 0 0 .87-1.5L12 3Z" {...strokeProps} />
+                    <path d="M12 8v5" {...strokeProps} />
+                    <circle cx="12" cy="16.5" r="1" fill={color} />
+                </svg>
+            );
+    }
+};
 
 const INEHSSAdminModule: React.FC = () => {
     const [activeTab, setActiveTab] = useState<INEHSSTab>(() => {
@@ -80,7 +167,13 @@ const INEHSSAdminModule: React.FC = () => {
     const [formType, setFormType] = useState<'public' | 'officer'>('public');
     const [followUpFor, setFollowUpFor] = useState('');
     const [geoMode, setGeoMode] = useState<'disabled' | 'manual' | 'auto'>('manual');
-    const [formFields, setFormFields] = useState<FormField[]>([]);
+    const [mapIcon, setMapIcon] = useState<MapIconName>(DEFAULT_MAP_ICON);
+    const [mapColor, setMapColor] = useState(DEFAULT_MAP_COLOR);
+    const [eventCategory, setEventCategory] = useState(DEFAULT_EVENT_CATEGORY);
+    const [formFields, setFormFields] = useState<FormBuilderField[]>([]);
+    const [draggedFieldIndex, setDraggedFieldIndex] = useState<number | null>(null);
+    const [dragTargetIndex, setDragTargetIndex] = useState<number | null>(null);
+    const [dragInsertPosition, setDragInsertPosition] = useState<'before' | 'after'>('before');
 
     // Assignment Modal State
     const [assignmentModalReport, setAssignmentModalReport] = useState<HazardReportAdmin | null>(null);
@@ -121,19 +214,18 @@ const INEHSSAdminModule: React.FC = () => {
         sessionStorage.setItem(INEHSS_ACTIVE_TAB_KEY, activeTab);
     }, [activeTab]);
 
-    const getToken = () => localStorage.getItem('authToken');
+    const getToken = () => authService.getToken();
 
     const loadData = async () => {
         setIsLoading(true);
         try {
-            const token = getToken();
-            if (!token) {
+            if (!authService.isAuthenticated()) {
                 setError('Authentication required. Please log in.');
                 setIsLoading(false);
                 return;
             }
 
-            const headers = { Authorization: `Bearer ${token}` };
+            const headers = await getAuthorizedHeaders(getToken());
 
             // Load forms
             const formsRes = await fetch(`${API_BASE}/inehss/forms/`, { headers });
@@ -164,10 +256,10 @@ const INEHSSAdminModule: React.FC = () => {
     };
 
     const loadReports = async () => {
-        const token = getToken();
-        if (!token) return;
+        if (!authService.isAuthenticated()) return;
 
         try {
+            const token = getToken() || '';
             const reportsData = await getReports(token, {
                 search: reportSearch || undefined,
                 status: reportStatusFilter === 'all' ? undefined : reportStatusFilter,
@@ -195,6 +287,7 @@ const INEHSSAdminModule: React.FC = () => {
 
     const addField = () => {
         setFormFields([...formFields, {
+            _builderId: createFormBuilderFieldId(),
             name: `field_${formFields.length + 1}`,
             type: 'text',
             label: '',
@@ -202,12 +295,60 @@ const INEHSSAdminModule: React.FC = () => {
         }]);
     };
 
-    const updateField = (index: number, updates: Partial<FormField>) => {
-        setFormFields(prev => prev.map((f, i) => i === index ? { ...f, ...updates } : f));
+    const updateField = (index: number, updates: Partial<FormBuilderField>) => {
+        setFormFields(prev => updateFormFieldWithReferenceSync(prev, index, updates) as FormBuilderField[]);
     };
 
     const removeField = (index: number) => {
-        setFormFields(prev => prev.filter((_, i) => i !== index));
+        setFormFields(prev => removeFormFieldAndReferences(prev, index) as FormBuilderField[]);
+    };
+
+    const moveField = (fromIndex: number, toIndex: number) => {
+        setFormFields(prev => moveFormField(prev, fromIndex, toIndex) as FormBuilderField[]);
+    };
+
+    const resetFieldDragState = () => {
+        setDraggedFieldIndex(null);
+        setDragTargetIndex(null);
+        setDragInsertPosition('before');
+    };
+
+    const handleFieldDragStart = (event: React.DragEvent<HTMLButtonElement>, index: number) => {
+        setDraggedFieldIndex(index);
+        setDragTargetIndex(index);
+        setDragInsertPosition('before');
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', String(index));
+    };
+
+    const handleFieldDragOver = (event: React.DragEvent<HTMLDivElement>, index: number) => {
+        if (draggedFieldIndex === null) return;
+
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+
+        const bounds = event.currentTarget.getBoundingClientRect();
+        const nextPosition = event.clientY - bounds.top < bounds.height / 2 ? 'before' : 'after';
+
+        if (dragTargetIndex !== index || dragInsertPosition !== nextPosition) {
+            setDragTargetIndex(index);
+            setDragInsertPosition(nextPosition);
+        }
+    };
+
+    const handleFieldDrop = (event: React.DragEvent<HTMLDivElement>, index: number) => {
+        event.preventDefault();
+
+        if (draggedFieldIndex === null) {
+            resetFieldDragState();
+            return;
+        }
+
+        const destinationIndex = dragInsertPosition === 'after' ? index + 1 : index;
+        const adjustedIndex = draggedFieldIndex < destinationIndex ? destinationIndex - 1 : destinationIndex;
+
+        moveField(draggedFieldIndex, adjustedIndex);
+        resetFieldDragState();
     };
 
     const saveForm = async () => {
@@ -223,11 +364,11 @@ const INEHSSAdminModule: React.FC = () => {
                 form_type: formType,
                 follow_up_for: formType === 'officer' && followUpFor ? followUpFor : null,
                 geo_mode: geoMode,
-                schema: formFields,
+                schema: formFields.map(stripFormBuilderField),
                 is_active: true,
-                map_icon: (editingForm as any)?.map_icon || 'warning',
-                map_color: (editingForm as any)?.map_color || '#f97316',
-                event_category: (editingForm as any)?.event_category || 'environmental_hazard',
+                map_icon: mapIcon,
+                map_color: mapColor,
+                event_category: eventCategory,
             };
 
             const method = editingForm ? 'PUT' : 'POST';
@@ -237,10 +378,9 @@ const INEHSSAdminModule: React.FC = () => {
 
             const res = await fetch(url, {
                 method,
-                headers: {
+                headers: await getAuthorizedHeaders(getToken(), {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${getToken()}`,
-                },
+                }),
                 body: JSON.stringify(payload),
             });
 
@@ -262,10 +402,15 @@ const INEHSSAdminModule: React.FC = () => {
         setFormType('public');
         setFollowUpFor('');
         setGeoMode('manual');
+        setMapIcon(DEFAULT_MAP_ICON);
+        setMapColor(DEFAULT_MAP_COLOR);
+        setEventCategory(DEFAULT_EVENT_CATEGORY);
         setFormFields([]);
+        resetFieldDragState();
     };
 
     const openFormBuilder = (form?: FormTemplate) => {
+        resetFieldDragState();
         if (form) {
             setEditingForm(form);
             setFormName(form.name);
@@ -273,7 +418,10 @@ const INEHSSAdminModule: React.FC = () => {
             setFormType(form.form_type);
             setFollowUpFor(form.follow_up_for || '');
             setGeoMode(form.geo_mode || 'manual');
-            setFormFields(form.schema || []);
+            setMapIcon(isMapIconName(form.map_icon) ? form.map_icon : DEFAULT_MAP_ICON);
+            setMapColor(form.map_color || DEFAULT_MAP_COLOR);
+            setEventCategory(form.event_category || DEFAULT_EVENT_CATEGORY);
+            setFormFields((form.schema || []).map(toFormBuilderField));
         } else {
             resetFormBuilder();
         }
@@ -297,7 +445,7 @@ const INEHSSAdminModule: React.FC = () => {
         // For direct assignments, we need the template; for regular assignments, we need both report and form
         if (isDirect) {
             if (!directAssignmentTemplate) {
-                setError('Please select an inspection template for direct assignment');
+                setError('Please select a form for direct assignment');
                 return;
             }
         } else {
@@ -328,20 +476,19 @@ const INEHSSAdminModule: React.FC = () => {
                 officer: selectedOfficer,
                 inspection_form: finalFormId || directAssignmentTemplate?.id,
                 notes: assignmentNotes,
-                is_persistent: isDirect || isPatrolMode, // Patrol Mode assignments are persistent
+                is_persistent: isPatrolMode,
             };
 
-            // Only include report if it's a regular assignment (not direct Patrol Mode)
+            // Only include report if it's tied to a specific report.
             if (!isDirect) {
                 payload.report = finalReportId;
             }
 
             const res = await fetch(`${API_BASE}/inehss/assignments/`, {
                 method: 'POST',
-                headers: {
+                headers: await getAuthorizedHeaders(getToken(), {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${getToken()}`,
-                },
+                }),
                 body: JSON.stringify(payload),
             });
 
@@ -371,10 +518,9 @@ const INEHSSAdminModule: React.FC = () => {
         try {
             const res = await fetch(`${API_BASE}/inehss/officers/`, {
                 method: 'POST',
-                headers: {
+                headers: await getAuthorizedHeaders(getToken(), {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${getToken()}`,
-                },
+                }),
                 body: JSON.stringify({
                     username: newOfficerUsername,
                     email: newOfficerEmail,
@@ -575,6 +721,17 @@ const INEHSSAdminModule: React.FC = () => {
     const eligibleBaseForms = forms.filter(form => form.id !== editingForm?.id);
     const reportableForms = forms.filter(f => f.form_type === 'public');
     const assignmentModalAction = assignmentModalReport ? getReportActionConfig(assignmentModalReport) : null;
+    const isDirectAssignment = !!directAssignmentTemplate;
+    const directAssignmentTitle = isPatrolMode ? 'Patrol Assignment' : 'Direct Assignment';
+    const directAssignmentModeLabel = isPatrolMode ? 'Persistent' : 'One-Time';
+    const directAssignmentDescription = directAssignmentTemplate
+        ? isPatrolMode
+            ? `Officer will patrol with ${directAssignmentTemplate.name} form`
+            : `Officer will complete a one-time assignment using ${directAssignmentTemplate.name} form`
+        : '';
+    const assignmentSubmitLabel = isDirectAssignment
+        ? (isPatrolMode ? 'Assign Patrol' : 'Assign One-Time Assignment')
+        : assignmentModalAction?.label || 'Assign';
 
     const clearReportFilters = () => {
         setReportSearch('');
@@ -588,9 +745,9 @@ const INEHSSAdminModule: React.FC = () => {
     };
 
     const handleApproveAssignment = async (assignmentId: string) => {
-        const token = getToken();
-        if (!token) return;
+        if (!authService.isAuthenticated()) return;
         try {
+            const token = getToken() || '';
             await approveAssignment(assignmentId, token);
             showSuccess('Assignment approved');
             await loadData();
@@ -600,11 +757,11 @@ const INEHSSAdminModule: React.FC = () => {
     };
 
     const handleRequestRevision = async (assignmentId: string) => {
-        const token = getToken();
-        if (!token) return;
+        if (!authService.isAuthenticated()) return;
         const notes = window.prompt('Revision notes for officer:');
         if (!notes) return;
         try {
+            const token = getToken() || '';
             await requestAssignmentRevision(assignmentId, notes, token);
             showSuccess('Revision requested');
             await loadData();
@@ -614,14 +771,14 @@ const INEHSSAdminModule: React.FC = () => {
     };
 
     const handleReassign = async () => {
-        const token = getToken();
-        if (!token || !reassignModalAssignmentId) return;
+        if (!authService.isAuthenticated() || !reassignModalAssignmentId) return;
         if (!reassignOfficerId) {
             setError('Select an officer to reassign');
             return;
         }
 
         try {
+            const token = getToken() || '';
             await reassignAssignment(reassignModalAssignmentId, Number(reassignOfficerId), reassignReason, token);
             showSuccess('Assignment reassigned');
             setReassignModalAssignmentId(null);
@@ -718,21 +875,21 @@ const INEHSSAdminModule: React.FC = () => {
 
                                 <button
                                     onClick={() => {
-                                        // Create a temporary patrol mode template if no officer forms exist
+                                        // Open a direct assignment using the first available officer form
                                         if (officerForms.length === 0) {
                                             setError('Please create an officer-type form first');
                                             return;
                                         }
-                                        // Set the first officer form as the direct assignment template
                                         setDirectAssignmentTemplate(officerForms[0]);
                                         setSelectedInspectionForm(officerForms[0].id);
+                                        setIsPatrolMode(false);
                                     }}
                                     className="py-3 border-2 border-dashed border-purple-500/50 hover:border-purple-400 rounded-xl text-purple-400 hover:text-purple-300 transition-all flex items-center justify-center gap-2"
                                 >
                                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                                     </svg>
-                                    Patrol Mode
+                                    Direct Assignment
                                 </button>
                             </div>
 
@@ -760,11 +917,12 @@ const INEHSSAdminModule: React.FC = () => {
                                         </div>
                                         <div className="flex gap-2">
                                             {form.form_type === 'officer' && !form.follow_up_for && (
-                                                <Tooltip content="Assign this technical form directly to an officer.">
+                                                <Tooltip content="Assign this form directly to an officer and choose whether it is one-time or persistent.">
                                                     <button
                                                         onClick={() => {
                                                             setDirectAssignmentTemplate(form);
                                                             setSelectedInspectionForm(form.id);
+                                                            setIsPatrolMode(false);
                                                         }}
                                                         className="p-2 hover:bg-purple-500/20 text-purple-400 rounded-lg transition-colors border border-transparent hover:border-purple-500/30"
                                                     >
@@ -1294,7 +1452,10 @@ const INEHSSAdminModule: React.FC = () => {
                                     {editingForm ? 'Edit Form' : 'Create New Form'}
                                 </h3>
                                 <button
-                                    onClick={() => setIsFormBuilderOpen(false)}
+                                    onClick={() => {
+                                        resetFieldDragState();
+                                        setIsFormBuilderOpen(false);
+                                    }}
                                     className="p-2 hover:bg-slate-800 rounded-lg"
                                 >
                                     <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1329,30 +1490,40 @@ const INEHSSAdminModule: React.FC = () => {
                                     <div>
                                         <label className="block text-xs text-slate-500 uppercase mb-1">Map Icon</label>
                                         <select
-                                            value={(editingForm as any)?.map_icon || 'warning'}
-                                            onChange={e => setEditingForm(prev => prev ? { ...prev, map_icon: e.target.value } : null)}
+                                            value={mapIcon}
+                                            onChange={e => setMapIcon(isMapIconName(e.target.value) ? e.target.value : DEFAULT_MAP_ICON)}
                                             className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-white"
                                         >
-                                            <option value="warning">Warning (Triangle)</option>
-                                            <option value="alert">Alert (Circle)</option>
-                                            <option value="biohazard">Biohazard</option>
-                                            <option value="radiation">Radiation</option>
-                                            <option value="info">Info</option>
+                                            {MAP_ICON_OPTIONS.map(option => (
+                                                <option key={option.value} value={option.value}>{option.label}</option>
+                                            ))}
                                         </select>
+                                        <div className="mt-2 flex items-center gap-3 rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2">
+                                            <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-600/70" style={{ backgroundColor: `${mapColor}22` }}>
+                                                <MapIconGlyph icon={mapIcon} color={mapColor} className="w-6 h-6" />
+                                            </div>
+                                            <div className="min-w-0">
+                                                <div className="text-sm text-white truncate">{MAP_ICON_OPTIONS.find(option => option.value === mapIcon)?.label}</div>
+                                                <div className="flex items-center gap-2 text-xs text-slate-400">
+                                                    <span className="inline-block h-2.5 w-2.5 rounded-full border border-white/20" style={{ backgroundColor: mapColor }} />
+                                                    <span>{mapColor}</span>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                     <div>
                                         <label className="block text-xs text-slate-500 uppercase mb-1">Map Color</label>
                                         <div className="flex gap-2">
                                             <input
                                                 type="color"
-                                                value={(editingForm as any)?.map_color || '#f97316'}
-                                                onChange={e => setEditingForm(prev => prev ? { ...prev, map_color: e.target.value } : null)}
+                                                value={mapColor}
+                                                onChange={e => setMapColor(e.target.value)}
                                                 className="h-10 w-10 rounded cursor-pointer bg-transparent border-none"
                                             />
                                             <input
                                                 type="text"
-                                                value={(editingForm as any)?.map_color || '#f97316'}
-                                                onChange={e => setEditingForm(prev => prev ? { ...prev, map_color: e.target.value } : null)}
+                                                value={mapColor}
+                                                onChange={e => setMapColor(e.target.value)}
                                                 className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-white"
                                             />
                                         </div>
@@ -1361,8 +1532,8 @@ const INEHSSAdminModule: React.FC = () => {
                                         <label className="block text-xs text-slate-500 uppercase mb-1">Event Category</label>
                                         <input
                                             type="text"
-                                            value={(editingForm as any)?.event_category || 'environmental_hazard'}
-                                            onChange={e => setEditingForm(prev => prev ? { ...prev, event_category: e.target.value } : null)}
+                                            value={eventCategory}
+                                            onChange={e => setEventCategory(e.target.value)}
                                             className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-white"
                                         />
                                     </div>
@@ -1450,189 +1621,225 @@ const INEHSSAdminModule: React.FC = () => {
                                 </div>
 
                                 <div>
-                                    <label className="block text-xs text-slate-500 uppercase mb-2">Form Fields</label>
+                                    <div className="flex items-center justify-between gap-3 mb-2">
+                                        <label className="block text-xs text-slate-500 uppercase">Form Fields</label>
+                                        <span className="text-[11px] text-slate-500">Drag the handle to reorder fields</span>
+                                    </div>
                                     <div className="space-y-3">
-                                        {formFields.map((field, idx) => (
-                                            <div key={idx} className="bg-slate-800 border border-slate-700 rounded-lg p-3">
-                                                <div className="flex gap-2 mb-2">
-                                                    <input
-                                                        type="text"
-                                                        value={field.label}
-                                                        onChange={e => updateField(idx, { label: e.target.value, name: e.target.value.toLowerCase().replace(/\s+/g, '_') })}
-                                                        className="flex-1 bg-slate-700 border border-slate-600 rounded px-3 py-1.5 text-white text-sm"
-                                                        placeholder="Field Label"
-                                                    />
-                                                    <select
-                                                        value={field.type}
-                                                        onChange={e => updateField(idx, { type: e.target.value as any })}
-                                                        className="bg-slate-700 border border-slate-600 rounded px-3 py-1.5 text-white text-sm"
-                                                    >
-                                                        <option value="text">Text</option>
-                                                        <option value="textarea">Text Area</option>
-                                                        <option value="number">Number</option>
-                                                        <option value="select">Dropdown</option>
-                                                        <option value="multiselect">Multi-Select</option>
-                                                        <option value="checkbox">Checkbox</option>
-                                                        <option value="radio">Radio</option>
-                                                        <option value="date">Date</option>
-                                                        <option value="file">File Upload</option>
-                                                    </select>
-                                                    <label className="flex items-center gap-1 text-xs text-slate-400">
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={field.required}
-                                                            onChange={e => updateField(idx, { required: e.target.checked })}
-                                                        />
-                                                        Required
-                                                    </label>
-                                                    <button
-                                                        onClick={() => removeField(idx)}
-                                                        className="p-1.5 hover:bg-red-500/20 rounded text-red-400"
-                                                    >
-                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                                        </svg>
-                                                    </button>
-                                                </div>
-                                                {['select', 'multiselect', 'radio'].includes(field.type) && (
-                                                    <input
-                                                        type="text"
-                                                        value={field.options?.map(o => o.label).join(', ') || ''}
-                                                        onChange={e => updateField(idx, {
-                                                            options: e.target.value.split(',').map(s => ({ value: s.trim().toLowerCase().replace(/\s+/g, '_'), label: s.trim() }))
-                                                        })}
-                                                        className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-1.5 text-white text-sm mt-2"
-                                                        placeholder="Options (comma-separated): Option 1, Option 2, Option 3"
-                                                    />
-                                                )}
+                                        {formFields.map((field, idx) => {
+                                            const showDropBefore = draggedFieldIndex !== null && dragTargetIndex === idx && dragInsertPosition === 'before';
+                                            const showDropAfter = draggedFieldIndex !== null && dragTargetIndex === idx && dragInsertPosition === 'after';
+                                            const isDragging = draggedFieldIndex === idx;
 
-                                                {/* Skip Logic Conditions */}
-                                                <div className="mt-2">
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => {
-                                                            const current = field.conditions || [];
-                                                            if (current.length === 0) {
-                                                                updateField(idx, { conditions: [{ field: '', operator: 'equals', value: '' }] });
-                                                            } else {
-                                                                updateField(idx, { conditions: undefined });
-                                                            }
-                                                        }}
-                                                        className={`text-[11px] font-medium px-2 py-0.5 rounded transition-all ${field.conditions && field.conditions.length > 0
-                                                            ? 'bg-blue-500/20 text-blue-400 border border-blue-500/40'
-                                                            : 'text-slate-500 hover:text-blue-400 hover:bg-blue-500/10'
-                                                            }`}
+                                            return (
+                                                <React.Fragment key={field._builderId}>
+                                                    {showDropBefore && <div className="h-1 rounded-full bg-green-500/80 shadow-[0_0_12px_rgba(34,197,94,0.45)]" />}
+                                                    <div
+                                                        className={`bg-slate-800 border rounded-lg p-3 transition-all ${isDragging ? 'border-green-500/60 opacity-70' : 'border-slate-700'}`}
+                                                        onDragOver={event => handleFieldDragOver(event, idx)}
+                                                        onDrop={event => handleFieldDrop(event, idx)}
                                                     >
-                                                        {field.conditions && field.conditions.length > 0 ? '✦ Skip Logic Active' : '+ Show if…'}
-                                                    </button>
+                                                        <div className="flex gap-2 mb-2 items-start">
+                                                            <button
+                                                                type="button"
+                                                                draggable
+                                                                onDragStart={event => handleFieldDragStart(event, idx)}
+                                                                onDragEnd={resetFieldDragState}
+                                                                className="mt-0.5 p-2 rounded border border-slate-600 text-slate-400 hover:text-slate-200 hover:border-slate-500 cursor-grab active:cursor-grabbing"
+                                                                title="Drag to reorder field"
+                                                            >
+                                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 6h.01M8 12h.01M8 18h.01M16 6h.01M16 12h.01M16 18h.01" />
+                                                                </svg>
+                                                            </button>
+                                                            <input
+                                                                type="text"
+                                                                value={field.label}
+                                                                onChange={e => {
+                                                                    const nextLabel = e.target.value;
+                                                                    updateField(idx, {
+                                                                        label: nextLabel,
+                                                                        name: normalizeFieldName(nextLabel, field.name || `field_${idx + 1}`),
+                                                                    });
+                                                                }}
+                                                                className="flex-1 bg-slate-700 border border-slate-600 rounded px-3 py-1.5 text-white text-sm"
+                                                                placeholder="Field Label"
+                                                            />
+                                                            <select
+                                                                value={field.type}
+                                                                onChange={e => updateField(idx, { type: e.target.value as any })}
+                                                                className="bg-slate-700 border border-slate-600 rounded px-3 py-1.5 text-white text-sm"
+                                                            >
+                                                                <option value="text">Text</option>
+                                                                <option value="textarea">Text Area</option>
+                                                                <option value="number">Number</option>
+                                                                <option value="select">Dropdown</option>
+                                                                <option value="multiselect">Multi-Select</option>
+                                                                <option value="checkbox">Checkbox</option>
+                                                                <option value="radio">Radio</option>
+                                                                <option value="date">Date</option>
+                                                                <option value="file">File Upload</option>
+                                                            </select>
+                                                            <label className="flex items-center gap-1 text-xs text-slate-400">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={field.required}
+                                                                    onChange={e => updateField(idx, { required: e.target.checked })}
+                                                                />
+                                                                Required
+                                                            </label>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => removeField(idx)}
+                                                                className="p-1.5 hover:bg-red-500/20 rounded text-red-400"
+                                                            >
+                                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                                </svg>
+                                                            </button>
+                                                        </div>
+                                                        {['select', 'multiselect', 'radio'].includes(field.type) && (
+                                                            <input
+                                                                type="text"
+                                                                value={field.options?.map(o => o.label).join(', ') || ''}
+                                                                onChange={e => updateField(idx, {
+                                                                    options: e.target.value.split(',').map(s => ({ value: s.trim().toLowerCase().replace(/\s+/g, '_'), label: s.trim() }))
+                                                                })}
+                                                                className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-1.5 text-white text-sm mt-2"
+                                                                placeholder="Options (comma-separated): Option 1, Option 2, Option 3"
+                                                            />
+                                                        )}
 
-                                                    {field.conditions && field.conditions.length > 0 && (
-                                                        <div className="mt-2 space-y-2 pl-2 border-l-2 border-blue-500/30">
-                                                            {field.conditions.map((cond, condIdx) => {
-                                                                // Get the source field's options (if select/radio/multiselect)
-                                                                const sourceField = formFields.find(f => f.name === cond.field);
-                                                                const hasOptions = sourceField && ['select', 'multiselect', 'radio'].includes(sourceField.type);
-                                                                const needsValue = !['not_empty', 'is_empty'].includes(cond.operator);
+                                                        {/* Skip Logic Conditions */}
+                                                        <div className="mt-2">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    const current = field.conditions || [];
+                                                                    if (current.length === 0) {
+                                                                        updateField(idx, { conditions: [{ field: '', operator: 'equals', value: '' }] });
+                                                                    } else {
+                                                                        updateField(idx, { conditions: undefined });
+                                                                    }
+                                                                }}
+                                                                className={`text-[11px] font-medium px-2 py-0.5 rounded transition-all ${field.conditions && field.conditions.length > 0
+                                                                    ? 'bg-blue-500/20 text-blue-400 border border-blue-500/40'
+                                                                    : 'text-slate-500 hover:text-blue-400 hover:bg-blue-500/10'
+                                                                    }`}
+                                                            >
+                                                                {field.conditions && field.conditions.length > 0 ? '✦ Skip Logic Active' : '+ Show if…'}
+                                                            </button>
 
-                                                                return (
-                                                                    <div key={condIdx} className="flex items-center gap-1.5 flex-wrap">
-                                                                        <span className="text-[10px] text-slate-500 uppercase font-bold">
-                                                                            {condIdx === 0 ? 'Show if' : 'AND'}
-                                                                        </span>
-                                                                        <select
-                                                                            value={cond.field}
-                                                                            onChange={e => {
-                                                                                const updated = [...(field.conditions || [])];
-                                                                                updated[condIdx] = { ...updated[condIdx], field: e.target.value };
-                                                                                updateField(idx, { conditions: updated });
-                                                                            }}
-                                                                            className="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-white text-[11px] max-w-[120px]"
-                                                                        >
-                                                                            <option value="">Select field…</option>
-                                                                            {formFields
-                                                                                .filter((f, fIdx) => fIdx !== idx)
-                                                                                .map(f => (
-                                                                                    <option key={f.name} value={f.name}>{f.label || f.name}</option>
-                                                                                ))
-                                                                            }
-                                                                        </select>
-                                                                        <select
-                                                                            value={cond.operator}
-                                                                            onChange={e => {
-                                                                                const updated = [...(field.conditions || [])];
-                                                                                updated[condIdx] = { ...updated[condIdx], operator: e.target.value as any };
-                                                                                updateField(idx, { conditions: updated });
-                                                                            }}
-                                                                            className="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-white text-[11px]"
-                                                                        >
-                                                                            <option value="equals">equals</option>
-                                                                            <option value="not_equals">≠ not equals</option>
-                                                                            <option value="contains">contains</option>
-                                                                            <option value="not_empty">is not empty</option>
-                                                                            <option value="is_empty">is empty</option>
-                                                                            <option value="greater_than">&gt; greater than</option>
-                                                                            <option value="less_than">&lt; less than</option>
-                                                                        </select>
-                                                                        {needsValue && (
-                                                                            hasOptions ? (
+                                                            {field.conditions && field.conditions.length > 0 && (
+                                                                <div className="mt-2 space-y-2 pl-2 border-l-2 border-blue-500/30">
+                                                                    {field.conditions.map((cond, condIdx) => {
+                                                                        // Get the source field's options (if select/radio/multiselect)
+                                                                        const sourceField = formFields.find(f => f.name === cond.field);
+                                                                        const hasOptions = sourceField && ['select', 'multiselect', 'radio'].includes(sourceField.type);
+                                                                        const needsValue = !['not_empty', 'is_empty'].includes(cond.operator);
+
+                                                                        return (
+                                                                            <div key={condIdx} className="flex items-center gap-1.5 flex-wrap">
+                                                                                <span className="text-[10px] text-slate-500 uppercase font-bold">
+                                                                                    {condIdx === 0 ? 'Show if' : 'AND'}
+                                                                                </span>
                                                                                 <select
-                                                                                    value={String(cond.value || '')}
+                                                                                    value={cond.field}
                                                                                     onChange={e => {
                                                                                         const updated = [...(field.conditions || [])];
-                                                                                        updated[condIdx] = { ...updated[condIdx], value: e.target.value };
+                                                                                        updated[condIdx] = { ...updated[condIdx], field: e.target.value };
                                                                                         updateField(idx, { conditions: updated });
                                                                                     }}
                                                                                     className="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-white text-[11px] max-w-[120px]"
                                                                                 >
-                                                                                    <option value="">Select value…</option>
-                                                                                    {sourceField?.options?.map(o => (
-                                                                                        <option key={o.value} value={o.value}>{o.label}</option>
-                                                                                    ))}
+                                                                                    <option value="">Select field…</option>
+                                                                                    {formFields
+                                                                                        .filter((f, fIdx) => fIdx !== idx)
+                                                                                        .map(f => (
+                                                                                            <option key={f.name} value={f.name}>{f.label || f.name}</option>
+                                                                                        ))
+                                                                                    }
                                                                                 </select>
-                                                                            ) : (
-                                                                                <input
-                                                                                    type="text"
-                                                                                    value={String(cond.value || '')}
+                                                                                <select
+                                                                                    value={cond.operator}
                                                                                     onChange={e => {
                                                                                         const updated = [...(field.conditions || [])];
-                                                                                        updated[condIdx] = { ...updated[condIdx], value: e.target.value };
+                                                                                        updated[condIdx] = { ...updated[condIdx], operator: e.target.value as any };
                                                                                         updateField(idx, { conditions: updated });
                                                                                     }}
-                                                                                    className="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-white text-[11px] w-20"
-                                                                                    placeholder="value"
-                                                                                />
-                                                                            )
-                                                                        )}
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => {
-                                                                                const updated = (field.conditions || []).filter((_, i) => i !== condIdx);
-                                                                                updateField(idx, { conditions: updated.length > 0 ? updated : undefined });
-                                                                            }}
-                                                                            className="p-0.5 hover:bg-red-500/20 rounded text-red-400/60 hover:text-red-400"
-                                                                        >
-                                                                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                                                            </svg>
-                                                                        </button>
-                                                                    </div>
-                                                                );
-                                                            })}
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => {
-                                                                    const updated = [...(field.conditions || []), { field: '', operator: 'equals' as const, value: '' }];
-                                                                    updateField(idx, { conditions: updated });
-                                                                }}
-                                                                className="text-[10px] text-blue-400/70 hover:text-blue-400 transition-colors"
-                                                            >
-                                                                + Add AND condition
-                                                            </button>
+                                                                                    className="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-white text-[11px]"
+                                                                                >
+                                                                                    <option value="equals">equals</option>
+                                                                                    <option value="not_equals">≠ not equals</option>
+                                                                                    <option value="contains">contains</option>
+                                                                                    <option value="not_empty">is not empty</option>
+                                                                                    <option value="is_empty">is empty</option>
+                                                                                    <option value="greater_than">&gt; greater than</option>
+                                                                                    <option value="less_than">&lt; less than</option>
+                                                                                </select>
+                                                                                {needsValue && (
+                                                                                    hasOptions ? (
+                                                                                        <select
+                                                                                            value={String(cond.value || '')}
+                                                                                            onChange={e => {
+                                                                                                const updated = [...(field.conditions || [])];
+                                                                                                updated[condIdx] = { ...updated[condIdx], value: e.target.value };
+                                                                                                updateField(idx, { conditions: updated });
+                                                                                            }}
+                                                                                            className="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-white text-[11px] max-w-[120px]"
+                                                                                        >
+                                                                                            <option value="">Select value…</option>
+                                                                                            {sourceField?.options?.map(o => (
+                                                                                                <option key={o.value} value={o.value}>{o.label}</option>
+                                                                                            ))}
+                                                                                        </select>
+                                                                                    ) : (
+                                                                                        <input
+                                                                                            type="text"
+                                                                                            value={String(cond.value || '')}
+                                                                                            onChange={e => {
+                                                                                                const updated = [...(field.conditions || [])];
+                                                                                                updated[condIdx] = { ...updated[condIdx], value: e.target.value };
+                                                                                                updateField(idx, { conditions: updated });
+                                                                                            }}
+                                                                                            className="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-white text-[11px] w-20"
+                                                                                            placeholder="value"
+                                                                                        />
+                                                                                    )
+                                                                                )}
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => {
+                                                                                        const updated = (field.conditions || []).filter((_, i) => i !== condIdx);
+                                                                                        updateField(idx, { conditions: updated.length > 0 ? updated : undefined });
+                                                                                    }}
+                                                                                    className="p-0.5 hover:bg-red-500/20 rounded text-red-400/60 hover:text-red-400"
+                                                                                >
+                                                                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                                                                    </svg>
+                                                                                </button>
+                                                                            </div>
+                                                                        );
+                                                                    })}
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => {
+                                                                            const updated = [...(field.conditions || []), { field: '', operator: 'equals' as const, value: '' }];
+                                                                            updateField(idx, { conditions: updated });
+                                                                        }}
+                                                                        className="text-[10px] text-blue-400/70 hover:text-blue-400 transition-colors"
+                                                                    >
+                                                                        + Add AND condition
+                                                                    </button>
+                                                                </div>
+                                                            )}
                                                         </div>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        ))}
+                                                    </div>
+                                                    {showDropAfter && <div className="h-1 rounded-full bg-green-500/80 shadow-[0_0_12px_rgba(34,197,94,0.45)]" />}
+                                                </React.Fragment>
+                                            )
+                                        })}
                                         <button
                                             onClick={addField}
                                             className="w-full py-2 border border-dashed border-slate-600 hover:border-green-500 rounded-lg text-slate-400 hover:text-green-400 text-sm transition-all"
@@ -1645,7 +1852,10 @@ const INEHSSAdminModule: React.FC = () => {
 
                             <div className="p-6 border-t border-slate-800 flex gap-3">
                                 <button
-                                    onClick={() => setIsFormBuilderOpen(false)}
+                                    onClick={() => {
+                                        resetFieldDragState();
+                                        setIsFormBuilderOpen(false);
+                                    }}
                                     className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-lg transition-all"
                                 >
                                     Cancel
@@ -1670,17 +1880,17 @@ const INEHSSAdminModule: React.FC = () => {
                             <div className="p-6 border-b border-slate-800">
                                 <div className="flex items-center gap-2 mb-2">
                                     <h3 className="text-lg font-bold text-white">
-                                        {directAssignmentTemplate ? 'Patrol Mode Assignment' : assignmentModalAction?.label || 'Assign Report'}
+                                        {isDirectAssignment ? directAssignmentTitle : assignmentModalAction?.label || 'Assign Report'}
                                     </h3>
-                                    {directAssignmentTemplate && (
+                                    {isDirectAssignment && (
                                         <span className="px-2 py-1 bg-purple-500/20 text-purple-400 text-xs font-bold rounded uppercase">
-                                            Persistent
+                                            {directAssignmentModeLabel}
                                         </span>
                                     )}
                                 </div>
                                 <p className="text-sm text-slate-400">
-                                    {directAssignmentTemplate
-                                        ? `Officer will patrol with ${directAssignmentTemplate.name} form`
+                                    {isDirectAssignment
+                                        ? directAssignmentDescription
                                         : assignmentModalReport
                                             ? `${assignmentModalReport.tracking_id} • ${assignmentModalAction?.tooltip || 'Create an operational task for this report.'}`
                                             : 'Create an operational task for this report.'
@@ -1728,14 +1938,16 @@ const INEHSSAdminModule: React.FC = () => {
 
                                 {directAssignmentTemplate && (
                                     <div>
-                                        <label className="block text-xs text-slate-500 uppercase mb-1">Inspection Form</label>
+                                        <label className="block text-xs text-slate-500 uppercase mb-1">Assigned Form</label>
                                         <div className="w-full bg-slate-700/50 border border-slate-600 rounded-lg px-4 py-2 text-white text-sm flex items-center justify-between">
                                             <span>{directAssignmentTemplate.name}</span>
                                             <svg className="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                                             </svg>
                                         </div>
-                                        <p className="text-xs text-slate-500 mt-2">Patrol mode form</p>
+                                        <p className="text-xs text-slate-500 mt-2">
+                                            {isPatrolMode ? 'Persistent assignment form' : 'One-time assignment form'}
+                                        </p>
                                     </div>
                                 )}
 
@@ -1749,20 +1961,33 @@ const INEHSSAdminModule: React.FC = () => {
                                     />
                                 </div>
 
-                                {!directAssignmentTemplate && (
-                                    <label className="flex items-center gap-3 p-3 bg-slate-800/50 border border-purple-500/30 rounded-lg cursor-pointer hover:bg-slate-800 transition-colors">
-                                        <input
-                                            type="checkbox"
-                                            checked={isPatrolMode}
-                                            onChange={e => setIsPatrolMode(e.target.checked)}
-                                            className="w-4 h-4 rounded border-slate-600 text-purple-600 cursor-pointer"
-                                        />
-                                        <div>
-                                            <div className="text-sm font-medium text-white">Patrol Mode</div>
-                                            <div className="text-xs text-slate-400">Officer can make multiple submissions without closing assignment</div>
-                                        </div>
-                                    </label>
-                                )}
+                                <div>
+                                    <label className="block text-xs text-slate-500 uppercase mb-2">Assignment Mode</label>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsPatrolMode(false)}
+                                            className={`p-3 rounded-lg border text-left transition-all ${!isPatrolMode
+                                                ? 'border-blue-500 bg-blue-500/10 text-white'
+                                                : 'border-slate-700 bg-slate-800/50 text-slate-300 hover:bg-slate-800'
+                                                }`}
+                                        >
+                                            <div className="text-sm font-medium">One-Time</div>
+                                            <div className="text-xs text-slate-400 mt-1">Single submission assignment that can close after completion.</div>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsPatrolMode(true)}
+                                            className={`p-3 rounded-lg border text-left transition-all ${isPatrolMode
+                                                ? 'border-purple-500 bg-purple-500/10 text-white'
+                                                : 'border-slate-700 bg-slate-800/50 text-slate-300 hover:bg-slate-800'
+                                                }`}
+                                        >
+                                            <div className="text-sm font-medium">Patrol / Persistent</div>
+                                            <div className="text-xs text-slate-400 mt-1">Officer can make multiple submissions without closing the assignment.</div>
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
 
                             <div className="p-6 border-t border-slate-800 flex gap-3">
@@ -1784,7 +2009,7 @@ const INEHSSAdminModule: React.FC = () => {
                                         : 'bg-purple-600 hover:bg-purple-500 text-white'
                                         }`}
                                 >
-                                    {isSubmittingAssignment ? 'Saving...' : directAssignmentTemplate ? 'Assign Patrol' : assignmentModalAction?.label || 'Assign'}
+                                    {isSubmittingAssignment ? 'Saving...' : assignmentSubmitLabel}
                                 </button>
                             </div>
                         </div>

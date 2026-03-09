@@ -1,4 +1,13 @@
 import api from './api';
+import {
+    USER_STORAGE_KEY,
+    clearStoredAuth,
+    decodeTokenPayload,
+    getAccessToken,
+    hasActiveSession,
+    notifyAuthStateChanged,
+    persistAuthTokens,
+} from './authSession.js';
 
 export type UserRole = 'admin' | 'supervisor' | 'analyst' | 'officer' | 'public';
 
@@ -16,19 +25,6 @@ export interface LoginResponse {
     access: string;
     refresh: string;
 }
-
-const USER_STORAGE_KEY = 'user';
-
-const decodeTokenPayload = (token: string): Record<string, any> | null => {
-    try {
-        const payload = token.split('.')[1];
-        const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
-        const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
-        return JSON.parse(window.atob(padded));
-    } catch {
-        return null;
-    }
-};
 
 const normalizeRole = (value: unknown): UserRole => {
     const role = typeof value === 'string' ? value.toLowerCase() : '';
@@ -57,8 +53,7 @@ export const authService = {
     async login(username: string, password: string): Promise<LoginResponse> {
         const response = await api.post<LoginResponse>('/auth/login/', { username, password });
         if (response.data.access) {
-            localStorage.setItem('authToken', response.data.access);
-            localStorage.setItem('refreshToken', response.data.refresh);
+            persistAuthTokens({ access: response.data.access, refresh: response.data.refresh });
             try {
                 await this.fetchCurrentUser();
             } catch {
@@ -74,19 +69,22 @@ export const authService = {
     async fetchCurrentUser(): Promise<User> {
         const response = await api.get<User>('/auth/users/me/');
         localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(response.data));
+        notifyAuthStateChanged();
         return response.data;
     },
 
     logout() {
-        localStorage.removeItem('authToken');
-        localStorage.removeItem('refreshToken');
-        localStorage.removeItem(USER_STORAGE_KEY);
+        clearStoredAuth();
     },
 
     getCurrentUser(): User | null {
         const userStr = localStorage.getItem(USER_STORAGE_KEY);
         if (userStr) {
-            return JSON.parse(userStr);
+            try {
+                return JSON.parse(userStr);
+            } catch {
+                localStorage.removeItem(USER_STORAGE_KEY);
+            }
         }
 
         const token = this.getToken();
@@ -123,11 +121,11 @@ export const authService = {
     },
 
     isAuthenticated(): boolean {
-        return !!localStorage.getItem('authToken');
+        return hasActiveSession();
     },
 
     getToken(): string | null {
-        return localStorage.getItem('authToken');
+        return getAccessToken();
     },
 
     getUser(): User | null {

@@ -9,9 +9,20 @@ import OfficerDashboard from './pages/OfficerDashboard';
 import ReportDetailPage from './pages/ReportDetailPage';
 import FormVersionHistoryPage from './pages/FormVersionHistoryPage';
 import { authService, UserRole } from './services/authService';
+import { subscribeToAuthChanges } from './services/authSession.js';
+
+
+const useAuthStateSignal = () => {
+  const [, setVersion] = React.useState(0);
+
+  React.useEffect(() => subscribeToAuthChanges(() => {
+    setVersion(version => version + 1);
+  }), []);
+};
 
 
 const ProtectedRoute = ({ children, allowedRoles }: { children: React.ReactElement; allowedRoles?: UserRole[] }) => {
+  useAuthStateSignal();
   const isAuthenticated = authService.isAuthenticated();
   const location = useLocation();
 
@@ -26,13 +37,21 @@ const ProtectedRoute = ({ children, allowedRoles }: { children: React.ReactEleme
   return children;
 };
 
-const RootRedirect = () => <Navigate to={authService.isAuthenticated() ? authService.getDefaultRoute() : '/inehss'} replace />;
+const RootRedirect = () => {
+  useAuthStateSignal();
+  return <Navigate to={authService.isAuthenticated() ? authService.getDefaultRoute() : '/inehss'} replace />;
+};
 
-const LoginRoute = () => authService.isAuthenticated()
-  ? <Navigate to={authService.getDefaultRoute()} replace />
-  : <LoginPage />;
+const LoginRoute = () => {
+  useAuthStateSignal();
+  return authService.isAuthenticated()
+    ? <Navigate to={authService.getDefaultRoute()} replace />
+    : <LoginPage />;
+};
 
 const App: React.FC = () => {
+  useAuthStateSignal();
+
   return (
     <Router>
       <Routes>
@@ -44,11 +63,8 @@ const App: React.FC = () => {
         <Route
           path="/inehss/officer"
           element={
-            <ProtectedRoute allowedRoles={['officer', 'admin', 'supervisor']}>
-              <OfficerDashboard
-                authToken={authService.getToken() || ''}
-                userName={authService.getUser()?.username || 'Officer'}
-              />
+            <ProtectedRoute allowedRoles={['officer']}>
+              <OfficerDashboard />
             </ProtectedRoute>
           }
         />
